@@ -12,15 +12,10 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# DB & models
 from app.db import init_db, get_session
-from app.models import Run
 from app.services.history import record_run, list_runs, get_run as db_get_run
-
-# Settings
 from app.services.settings import get_settings, update_settings
-
-# Core services
+from app.services.providers import list_ollama_models
 from app.services.csv_ingest import parse_csv
 from app.services.fetch import fetch_url
 from app.services.extract import extract_clean_text
@@ -34,7 +29,7 @@ from app.services.compare import summarize_scores, pick_primary_by_type
 
 hospital_schema = Path("app/schemas/hospital.schema.json").read_text()
 
-app = FastAPI(title="Schema Gen", version="1.1.0")
+app = FastAPI(title="Schema Gen", version="1.2.0")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.on_event("startup")
@@ -46,59 +41,32 @@ def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     return f"{prefix}-{host}-{ts}.{ext}"
 
-async def _process_single(
-    url: str,
-    topic: str | None,
-    subject: str | None,
-    audience: str | None,
-    address: str | None,
-    phone: str | None,
-    compare_existing: str | None,
-    competitor1: str | None,
-    competitor2: str | None,
-    session: AsyncSession,
-):
+async def _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, session: AsyncSession):
     raw_html = await fetch_url(url)
     cleaned_text = extract_clean_text(raw_html)
     sig = extract_signals(raw_html)
 
-    # Load runtime settings (provider, page_type, field lists)
     s = await get_settings(session)
-    provider = get_provider(s.provider or "dummy")
+    provider = get_provider(s.provider or "dummy", model=s.provider_model or None)
 
     payload = GenerationInputs(
-        url=url,
-        cleaned_text=cleaned_text,
-        topic=topic,
-        subject=subject,
-        audience=audience,
-        address=address or sig.get("address"),
-        phone=phone or sig.get("phone"),
-        sameAs=sig.get("sameAs"),
+        url=url, cleaned_text=cleaned_text, topic=topic, subject=subject, audience=audience,
+        address=address or sig.get("address"), phone=phone or sig.get("phone"), sameAs=sig.get("sameAs"),
         page_type=s.page_type or "Hospital",
     )
-    jsonld = provider.generate_jsonld(payload)
+    jsonld = await provider.generate_jsonld(payload)
 
-    # Validate & score
     required = (s.required_fields or ["@context","@type","name","url"])
     recommended = (s.recommended_fields or ["description","telephone","address","audience","dateModified","sameAs","medicalSpecialty"])
     valid, errors = validate_against_schema(jsonld, hospital_schema)
     overall, details = score_jsonld(jsonld, required, recommended)
 
-    # Refine
     final_jsonld, final_score, final_details, iterations = refine_to_perfect(
-        base_jsonld=jsonld,
-        cleaned_text=cleaned_text,
-        required=required,
-        recommended=recommended,
-        score_fn=score_jsonld,
-        max_attempts=3,
+        base_jsonld=jsonld, cleaned_text=cleaned_text, required=required, recommended=recommended, score_fn=score_jsonld, max_attempts=3,
     )
     final_valid, final_errors = validate_against_schema(final_jsonld, hospital_schema)
 
-    # Comparisons
-    comparisons = []
-    notes = []
+    comparisons, notes = [], []
     if compare_existing:
         onpage = extract_onpage_jsonld(raw_html)
         primary = pick_primary_by_type(onpage, s.page_type or "Hospital") if onpage else None
@@ -120,29 +88,77 @@ async def _process_single(
                 notes.append(f"{label}: fetch error – {ce}")
 
     return {
-        "url": url,
-        "topic": topic,
-        "subject": subject,
-        "audience": audience,
-        "address": address or sig.get("address"),
-        "phone": phone or sig.get("phone"),
-        "excerpt": cleaned_text[:2000],
-        "length": len(cleaned_text),
-        "jsonld": final_jsonld,
-        "valid": final_valid,
-        "validation_errors": final_errors,
-        "overall": final_score,
-        "details": final_details,
-        "iterations": iterations,
-        "comparisons": comparisons,
-        "comparison_notes": notes,
+        "url": url, "topic": topic, "subject": subject, "audience": audience,
+        "address": address or sig.get("address"), "phone": phone or sig.get("phone"),
+        "excerpt": cleaned_text[:2000], "length": len(cleaned_text),
+        "jsonld": final_jsonld, "valid": final_valid, "validation_errors": final_errors,
+        "overall": final_score, "details": final_details, "iterations": iterations,
+        "comparisons": comparisons, "comparison_notes": notes,
     }
 
-# -------------------- Core pages --------------------
+# Routes
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None):
     return templates.TemplateResponse("index.html", {"request": request, "ok": ok, "error": error})
 
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None):
+    s = await get_settings(session)
+    models = await list_ollama_models()
+    return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": ok, "ollama_models": models})
+
+@app.post("/admin", response_class=HTMLResponse)
+async def admin_post(
+    request: Request,
+    provider: str = Form("dummy"),
+    provider_model: str = Form(""),
+    page_type: str = Form("Hospital"),
+    required_fields: str = Form(""),
+    recommended_fields: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        req = json.loads(required_fields) if required_fields.strip() else None
+        rec = json.loads(recommended_fields) if recommended_fields.strip() else None
+    except Exception as e:
+        s = await get_settings(session)
+        models = await list_ollama_models()
+        return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": None, "error": f"Invalid JSON lists: {e}", "ollama_models": models})
+    await update_settings(session, provider, page_type, req, rec, provider_model or None)
+    return RedirectResponse(url="/admin?ok=1", status_code=303)
+
+# History
+@app.get("/history", response_class=HTMLResponse)
+async def history_list(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
+    rows = await list_runs(session, q=q or None, limit=200)
+    return templates.TemplateResponse("history_list.html", {"request": request, "rows": rows, "q": q})
+
+@app.get("/history/{run_id}", response_class=HTMLResponse)
+async def history_detail(request: Request, run_id: int, session: AsyncSession = Depends(get_session)):
+    run = await db_get_run(session, run_id)
+    if not run:
+        return RedirectResponse(url="/history", status_code=303)
+    return templates.TemplateResponse("history_detail.html", {"request": request, "run": run})
+
+# Export single
+@app.post("/export/jsonld")
+async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
+    data = json.loads(jsonld)
+    filename = _safe_filename_from_url(url, "schema", "json")
+    payload = json.dumps(data, indent=2)
+    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+@app.post("/export/csv")
+async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["url", "score", "jsonld"])
+    writer.writerow([url, score, jsonld])
+    out.seek(0)
+    filename = _safe_filename_from_url(url, "schema-single", "csv")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+# Single submit
 @app.post("/submit", response_class=HTMLResponse)
 async def submit(
     request: Request,
@@ -166,85 +182,9 @@ async def submit(
     except Exception as e:
         return RedirectResponse(url=str(URL("/").include_query_params(error=str(e))), status_code=303)
 
-# -------------------- Admin / Settings --------------------
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None):
-    s = await get_settings(session)
-    return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": ok})
-
-@app.post("/admin", response_class=HTMLResponse)
-async def admin_post(
-    request: Request,
-    provider: str = Form("dummy"),
-    page_type: str = Form("Hospital"),
-    required_fields: str = Form(""),
-    recommended_fields: str = Form(""),
-    session: AsyncSession = Depends(get_session),
-):
-    try:
-        req = json.loads(required_fields) if required_fields.strip() else None
-        rec = json.loads(recommended_fields) if recommended_fields.strip() else None
-    except Exception as e:
-        s = await get_settings(session)
-        return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": None, "error": f"Invalid JSON lists: {e}"})
-    await update_settings(session, provider, page_type, req, rec)
-    return RedirectResponse(url="/admin?ok=1", status_code=303)
-
-# -------------------- History --------------------
-@app.get("/history", response_class=HTMLResponse)
-async def history_list(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
-    rows = await list_runs(session, q=q or None, limit=200)
-    return templates.TemplateResponse("history_list.html", {"request": request, "rows": rows, "q": q})
-
-@app.get("/history/{run_id}", response_class=HTMLResponse)
-async def history_detail(request: Request, run_id: int, session: AsyncSession = Depends(get_session)):
-    run = await db_get_run(session, run_id)
-    if not run:
-        return RedirectResponse(url="/history", status_code=303)
-    return templates.TemplateResponse("history_detail.html", {"request": request, "run": run})
-
-# -------------------- Export (single) --------------------
-@app.post("/export/jsonld")
-async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
-    data = json.loads(jsonld)
-    filename = _safe_filename_from_url(url, "schema", "json")
-    payload = json.dumps(data, indent=2)
-    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
-
-@app.post("/export/csv")
-async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
-    out = io.StringIO()
-    writer = csv.writer(out)
-    writer.writerow(["url", "score", "jsonld"])
-    writer.writerow([url, score, jsonld])
-    out.seek(0)
-    filename = _safe_filename_from_url(url, "schema-single", "csv")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
-
-# -------------------- Batch ingest (upload/Sheets) + Preview --------------------
-async def _process_row(row: dict[str, str], session: AsyncSession) -> dict:
-    result = await _process_single(
-        url=(row.get("url") or "").strip(),
-        topic=row.get("topic") or None,
-        subject=row.get("subject") or None,
-        audience=row.get("audience") or None,
-        address=row.get("address") or None,
-        phone=row.get("phone") or None,
-        compare_existing=row.get("compare_existing") or None,
-        competitor1=row.get("competitor1") or None,
-        competitor2=row.get("competitor2") or None,
-        session=session,
-    )
-    return {
-        "url": result["url"],
-        "overall": result["overall"],
-        "valid": result["valid"],
-        "validation_errors": result["validation_errors"],
-        "jsonld": result["jsonld"],
-        "comparisons": result["comparisons"],
-        "comparison_notes": result["comparison_notes"],
-        "excerpt": result["excerpt"],
-    }
+# Batch + Preview
+from app.services.csv_ingest import parse_csv
+from fastapi import UploadFile, File
 
 def _csv_from_items(items: list[dict]) -> io.StringIO:
     out = io.StringIO()
@@ -268,7 +208,7 @@ async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Dep
     processed: list[dict[str, str]] = []
     for row in rows:
         try:
-            r = await _process_row(row, session)
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), session)
             processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
         except Exception as e:
             processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
@@ -296,7 +236,7 @@ async def batch_fetch(csv_url: str = Form(...), session: AsyncSession = Depends(
     processed: list[dict[str, str]] = []
     for row in rows:
         try:
-            r = await _process_row(row, session)
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), session)
             processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
         except Exception as e:
             processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
@@ -318,7 +258,12 @@ async def batch_preview_upload(request: Request, file: UploadFile = File(...), s
     items = []
     for row in rows:
         try:
-            items.append(await _process_row(row, session))
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), session)
+            items.append({
+                "url": r["url"], "overall": r["overall"], "valid": r["valid"], "validation_errors": r["validation_errors"],
+                "jsonld": r["jsonld"], "comparisons": r["comparisons"], "comparison_notes": r["comparison_notes"],
+                "excerpt": r["excerpt"],
+            })
         except Exception as e:
             items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": ""})
     return templates.TemplateResponse("batch_preview.html", {"request": request, "items": items})
@@ -338,7 +283,12 @@ async def batch_preview_fetch(request: Request, csv_url: str = Form(...), sessio
     items = []
     for row in rows:
         try:
-            items.append(await _process_row(row, session))
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), session)
+            items.append({
+                "url": r["url"], "overall": r["overall"], "valid": r["valid"], "validation_errors": r["validation_errors"],
+                "jsonld": r["jsonld"], "comparisons": r["comparisons"], "comparison_notes": r["comparison_notes"],
+                "excerpt": r["excerpt"],
+            })
         except Exception as e:
             items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": ""})
     return templates.TemplateResponse("batch_preview.html", {"request": request, "items": items})
