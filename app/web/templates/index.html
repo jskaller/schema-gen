@@ -3,20 +3,21 @@
 {% block title %}Schema Gen – Home{% endblock %}
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-lg-8">
+  <div class="col-lg-10 col-xl-9">
     <div class="card shadow-sm">
       <div class="card-body">
-        <h4 class="card-title mb-3">Single URL</h4>
+        <h4 class="card-title mb-3">Generate Schema for a Page</h4>
         {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
         {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
         <form method="post" action="/submit">
           <div class="mb-3">
             <label class="form-label">URL</label>
-            <input class="form-control" name="url" placeholder="https://example.org">
+            <input class="form-control" name="url" placeholder="https://example.org" required>
           </div>
+
           <div class="row">
             <div class="col-md-6 mb-3">
-              <label class="form-label">Page Type</label>
+              <label class="form-label">Page Type (label)</label>
               <select class="form-select" name="page_type">
                 <option value="">— Select page type —</option>
                 {% for label, cfg in mapping.items() %}
@@ -29,30 +30,29 @@
               <input class="form-control" name="topic" placeholder="e.g., Cardiology">
             </div>
           </div>
+
           <div class="row">
             <div class="col-md-6 mb-3">
               <label class="form-label">Subject / Name</label>
-              <input class="form-control" name="subject" placeholder="Entity name">
+              <input class="form-control" name="subject" placeholder="Entity name (e.g., clinic or department)">
             </div>
             <div class="col-md-6 mb-3">
               <label class="form-label">Audience</label>
               <input class="form-control" name="audience" placeholder="e.g., patient">
             </div>
           </div>
+
           <div class="row">
             <div class="col-md-6 mb-3">
               <label class="form-label">Address</label>
-              <input class="form-control" name="address" placeholder="123 Main St">
+              <input class="form-control" name="address" placeholder="123 Main St, City, ST">
             </div>
             <div class="col-md-6 mb-3">
               <label class="form-label">Phone</label>
               <input class="form-control" name="phone" placeholder="+1-555-555-5555">
             </div>
           </div>
-          <div class="mb-3 form-check">
-            <input class="form-check-input" type="checkbox" name="compare_existing" id="cmp">
-            <label class="form-check-label" for="cmp">Compare to on‑page JSON‑LD (if present)</label>
-          </div>
+
           <div class="text-end">
             <button class="btn btn-primary" type="submit">Generate</button>
             <a class="btn btn-outline-secondary" href="/batch">Batch</a>
