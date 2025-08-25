@@ -5,12 +5,13 @@ import csv
 import io
 
 EXPECTED = [
-    "url", "topic", "subject", "audience", "address", "phone",
+    "url", "page_type", "topic", "subject", "audience", "address", "phone",
     "compare_existing", "competitor1", "competitor2"
 ]
 
 SYNONYMS = {
     "url": ["url", "page", "page_url", "link", "target"],
+    "page_type": ["page_type", "pagetype", "type", "page type"],
     "topic": ["topic", "keyword", "keywords", "medicalSpecialty"],
     "subject": ["subject", "name", "title", "entity"],
     "audience": ["audience", "audienceType", "intended_audience"],
@@ -42,10 +43,6 @@ def map_headers(headers: List[str]) -> Dict[int, str]:
     return mapping
 
 def parse_csv(content: str) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """
-    Parse CSV text and return list of rows with normalized keys.
-    Returns (rows, warnings)
-    """
     warnings: List[str] = []
     reader = csv.reader(io.StringIO(content))
     rows = list(reader)
@@ -54,7 +51,7 @@ def parse_csv(content: str) -> Tuple[List[Dict[str, Any]], List[str]]:
     headers = rows[0]
     mapping = map_headers(headers)
     if "url" not in mapping.values():
-        warnings.append("No 'url' column detected — make sure your header includes something like 'url' or 'page_url'.")
+        warnings.append("No 'url' column detected — include 'url' or 'page_url'.")
     out: List[Dict[str, Any]] = []
     for r in rows[1:]:
         item: Dict[str, Any] = {k: "" for k in EXPECTED}
@@ -62,6 +59,6 @@ def parse_csv(content: str) -> Tuple[List[Dict[str, Any]], List[str]]:
             key = mapping.get(i)
             if key:
                 item[key] = cell.strip()
-        if any(v for v in item.values()):  # non-empty row
+        if any(v for v in item.values()):
             out.append(item)
     return out, warnings

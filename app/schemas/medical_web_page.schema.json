@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MedicalWebPage",
+  "type": "object",
+  "required": [
+    "@context",
+    "@type",
+    "name",
+    "url"
+  ],
+  "properties": {
+    "@context": {
+      "const": "https://schema.org"
+    },
+    "@type": {
+      "anyOf": [
+        {
+          "const": "MedicalWebPage"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "url": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "breadcrumb": {},
+    "dateModified": {
+      "type": "string"
+    },
+    "mainEntity": {}
+  },
+  "additionalProperties": true
+}

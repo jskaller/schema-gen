@@ -37,26 +37,33 @@
           {% endif %}
         </div>
         <div class="col-md-3 mb-3">
-          <label class="form-label">Page Type</label>
-          <select name="page_type" class="form-select">
-            {% for t in page_types %}
-              <option value="{{ t }}" {% if settings.page_type==t %}selected{% endif %}>{{ t }}</option>
-            {% endfor %}
-          </select>
+          <label class="form-label">Default Page Type (label)</label>
+          <input class="form-control" name="page_type" value="{{ settings.page_type }}">
+          <div class="form-text">This is the label used in CSV rows if none is provided (e.g., "Hospital", "Community Outreach").</div>
         </div>
         <div class="col-md-3 mb-3">
-          <label class="form-label">Use Defaults?</label>
+          <label class="form-label">Use Defaults for Primary Type?</label>
           <input type="checkbox" name="use_defaults" value="1">
         </div>
       </div>
+
       <div class="mb-3">
-        <label class="form-label">Required Fields</label>
+        <label class="form-label">Page Type → Schema Map (JSON)</label>
+        <textarea class="form-control" name="page_type_map" rows="8">{{ settings.page_type_map | tojson(indent=2) }}</textarea>
+        <div class="form-text">
+          Format: {"Community Outreach": {"primary": "MedicalWebPage", "secondary": ["CommunityHealth","BreadcrumbList"]}, "Hospital":{"primary":"Hospital","secondary":[]}}
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label">Required Fields (JSON list)</label>
         <textarea class="form-control" name="required_fields" rows="3">{{ settings.required_fields | tojson }}</textarea>
       </div>
       <div class="mb-3">
-        <label class="form-label">Recommended Fields</label>
+        <label class="form-label">Recommended Fields (JSON list)</label>
         <textarea class="form-control" name="recommended_fields" rows="4">{{ settings.recommended_fields | tojson }}</textarea>
       </div>
+
       <div class="d-flex justify-content-between">
         <button class="btn btn-primary" type="submit">Save</button>
         <form method="post" action="/admin/test">

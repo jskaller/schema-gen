@@ -1,14 +1,14 @@
 
 from __future__ import annotations
 from pathlib import Path
-import json
 
-AVAILABLE_PAGE_TYPES = ["Hospital", "MedicalClinic", "Physician"]
+AVAILABLE_PAGE_TYPES = ["Hospital", "MedicalClinic", "Physician", "MedicalWebPage"]
 
 SCHEMA_PATHS = {
     "Hospital": "app/schemas/hospital.schema.json",
     "MedicalClinic": "app/schemas/medical_clinic.schema.json",
     "Physician": "app/schemas/physician.schema.json",
+    "MedicalWebPage": "app/schemas/medical_web_page.schema.json",
 }
 
 DEFAULTS = {
@@ -23,6 +23,10 @@ DEFAULTS = {
     "Physician": {
         "required": ["@context","@type","name","url"],
         "recommended": ["description","telephone","address","medicalSpecialty","sameAs"],
+    },
+    "MedicalWebPage": {
+        "required": ["@context","@type","name","url"],
+        "recommended": ["description","breadcrumb","dateModified","mainEntity"],
     },
 }
 
