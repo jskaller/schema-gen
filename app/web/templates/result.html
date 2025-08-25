@@ -4,46 +4,44 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h4 class="mb-0">Result</h4>
-  <a href="/" class="btn btn-outline-secondary btn-sm">Back</a>
+  <div>
+    <form class="d-inline" method="post" action="/export/jsonld">
+      <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
+      <input type="hidden" name="url" value="{{ url }}">
+      <button class="btn btn-sm btn-primary">Download JSON‑LD</button>
+    </form>
+    <form class="d-inline" method="post" action="/export/csv">
+      <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
+      <input type="hidden" name="url" value="{{ url }}">
+      <input type="hidden" name="score" value="{{ overall }}">
+      <button class="btn btn-sm btn-outline-secondary">Download CSV</button>
+    </form>
+  </div>
 </div>
 
 <div class="row g-3">
   <div class="col-lg-8">
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="card-title mb-2">JSON‑LD</h5>
-        <pre class="p-3 bg-light border rounded" id="jsonld" style="white-space: pre-wrap">{{ jsonld | tojson(indent=2) }}</pre>
-        <form class="d-flex gap-2" method="post" action="/export/jsonld">
-          <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
-          <input type="hidden" name="url" value="{{ url }}">
-          <button class="btn btn-primary btn-sm" type="submit">Download JSON‑LD</button>
-          <button class="btn btn-outline-secondary btn-sm" type="button" onclick="navigator.clipboard.writeText(document.getElementById('jsonld').innerText)">Copy</button>
-        </form>
+        <h5 class="card-title">JSON‑LD</h5>
+        <pre class="p-3 bg-light border rounded" style="white-space: pre-wrap">{{ jsonld | tojson(indent=2) }}</pre>
         {% if validation_errors and validation_errors|length %}
-          <div class="alert alert-warning mt-3">
-            <strong>Validation issues:</strong>
-            <ul class="mb-0">{% for e in validation_errors %}<li>{{ e }}</li>{% endfor %}</ul>
-          </div>
+        <div class="alert alert-warning mt-2">
+          <strong>Validation issues:</strong>
+          <ul class="mb-0">
+            {% for err in validation_errors %}<li>{{ err }}</li>{% endfor %}
+          </ul>
+        </div>
         {% endif %}
       </div>
     </div>
 
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <h5 class="card-title mb-2">Advice</h5>
-        {% if advice and advice|length %}
-          <div class="alert alert-secondary mb-0"><ul class="mb-0">{% for tip in advice %}<li>{{ tip }}</li>{% endfor %}</ul></div>
-        {% else %}
-          <div class="alert alert-success mb-0">Looks good — no obvious missing fields detected.</div>
-        {% endif %}
-        {% if secondary_issues and secondary_issues|length %}
-          <div class="alert alert-warning mt-2">
-            <strong>Secondary checks:</strong>
-            <ul class="mb-0">{% for s in secondary_issues %}<li>{{ s }}</li>{% endfor %}</ul>
-          </div>
-        {% endif %}
-      </div>
+    {% if friendly_errors and friendly_errors|length %}
+    <div class="alert alert-info">
+      <strong>How to fix:</strong>
+      <ul class="mb-0">{% for tip in friendly_errors %}<li>{{ tip }}</li>{% endfor %}</ul>
     </div>
+    {% endif %}
   </div>
 
   <div class="col-lg-4">
@@ -52,19 +50,15 @@
         <h5 class="card-title">Meta</h5>
         <ul class="mb-2">
           <li><strong>URL:</strong> <code>{{ url }}</code></li>
-          <li><strong>Page Type:</strong> {{ page_type_label }} → <code>{{ primary_type }}</code></li>
+          <li><strong>Primary type:</strong> {{ primary_type }}</li>
           <li><strong>Score:</strong> {{ overall }}</li>
           <li><strong>Valid:</strong> {{ 'yes' if valid else 'no' }}</li>
         </ul>
-        <h6>Effective requirements</h6>
-        <div class="mb-2"><strong>Required:</strong> <code>{{ effective_required }}</code></div>
-        <div class="mb-2"><strong>Recommended:</strong> <code>{{ effective_recommended }}</code></div>
-        {% if comparison_notes and comparison_notes|length %}
-          <div class="alert alert-info mt-3">
-            <strong>Notes:</strong>
-            <ul class="mb-0">{% for n in comparison_notes %}<li>{{ n }}</li>{% endfor %}</ul>
-          </div>
-        {% endif %}
+        <div class="mb-2">
+          <h6 class="mb-1">Effective requirements</h6>
+          <div><strong>Required:</strong> <code>{{ effective_required | tojson }}</code></div>
+          <div><strong>Recommended:</strong> <code>{{ effective_recommended | tojson }}</code></div>
+        </div>
       </div>
     </div>
   </div>

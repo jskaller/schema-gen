@@ -2,82 +2,15 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Home{% endblock %}
 {% block content %}
-<div class="row">
-  <div class="col-lg-8">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title">Generate Schema</h5>
-        {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-        {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
-        <form method="post" action="/submit">
-          <div class="mb-3">
-            <label class="form-label">URL</label>
-            <input class="form-control" name="url" placeholder="https://example.org" required>
-          </div>
-          <div class="row">
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Page Type (label)</label>
-              <input class="form-control" name="page_type" placeholder="(optional, overrides default)">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Topic</label>
-              <input class="form-control" name="topic">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Subject</label>
-              <input class="form-control" name="subject">
-            </div>
-          </div>
-          <div class="row">
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Audience</label>
-              <input class="form-control" name="audience">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Address</label>
-              <input class="form-control" name="address">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Phone</label>
-              <input class="form-control" name="phone">
-            </div>
-          </div>
-          <div class="row">
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Compare existing?</label>
-              <select class="form-select" name="compare_existing">
-                <option value="">No</option>
-                <option value="1">Yes</option>
-              </select>
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Competitor #1</label>
-              <input class="form-control" name="competitor1">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Competitor #2</label>
-              <input class="form-control" name="competitor2">
-            </div>
-          </div>
-          <div class="text-end">
-            <button class="btn btn-primary" type="submit">Generate</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-  <div class="col-lg-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h6 class="card-title">Shortcuts</h6>
-        <ul class="mb-0">
-          <li><a href="/batch">Batch</a></li>
-          <li><a href="/history">History</a></li>
-          <li><a href="/admin">Admin</a></li>
-          <li><a href="/admin/types">Page Types</a></li>
-        </ul>
-      </div>
-    </div>
-  </div>
-</div>
+<h4>Generate schema (single URL)</h4>
+<form method="post" action="/submit" class="row g-3">
+  <div class="col-12"><input class="form-control" name="url" placeholder="https://example.org" required></div>
+  <div class="col-md-4"><input class="form-control" name="topic" placeholder="topic (optional)"></div>
+  <div class="col-md-4"><input class="form-control" name="subject" placeholder="subject/name (optional)"></div>
+  <div class="col-md-4"><input class="form-control" name="audience" placeholder="audience (optional)"></div>
+  <div class="col-md-6"><input class="form-control" name="address" placeholder="address (optional)"></div>
+  <div class="col-md-6"><input class="form-control" name="phone" placeholder="phone (optional)"></div>
+  <div class="col-md-6"><input class="form-control" name="page_type" placeholder="page type label (optional)"></div>
+  <div class="col-12"><button class="btn btn-primary">Run</button></div>
+</form>
 {% endblock %}
