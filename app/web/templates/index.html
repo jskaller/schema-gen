@@ -16,8 +16,13 @@
           </div>
           <div class="row">
             <div class="col-md-6 mb-3">
-              <label class="form-label">Page Type (label)</label>
-              <input class="form-control" name="page_type" placeholder="e.g., Hospital or Community Outreach">
+              <label class="form-label">Page Type</label>
+              <select class="form-select" name="page_type">
+                <option value="">— Select page type —</option>
+                {% for label, cfg in mapping.items() %}
+                  <option value="{{ label }}">{{ label }} → {{ cfg.primary }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="col-md-6 mb-3">
               <label class="form-label">Topic / Specialty</label>
