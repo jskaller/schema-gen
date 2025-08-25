@@ -1,8 +1,9 @@
 
 from __future__ import annotations
 from pathlib import Path
+import json
 
-AVAILABLE_PAGE_TYPES = ["Hospital", "MedicalClinic", "Physician", "MedicalWebPage"]
+AVAILABLE_PAGE_TYPES = ["Hospital", "MedicalClinic", "Physician"]
 
 SCHEMA_PATHS = {
     "Hospital": "app/schemas/hospital.schema.json",
@@ -26,12 +27,22 @@ DEFAULTS = {
     },
     "MedicalWebPage": {
         "required": ["@context","@type","name","url"],
-        "recommended": ["description","breadcrumb","dateModified","mainEntity"],
+        "recommended": ["description","breadcrumb","about","dateModified","primaryImageOfPage"],
     },
 }
 
+# Common pickers for UI
+COMMON_PRIMARY_TYPES = [
+    "Hospital","MedicalClinic","Physician","MedicalWebPage","Organization","LocalBusiness","WebPage","Article"
+]
+COMMON_SECONDARY_TYPES = [
+    "BreadcrumbList","Organization","LocalBusiness","Person","ImageObject","PostalAddress","FAQPage","VideoObject","CommunityHealth"
+]
+
 def load_schema(page_type: str) -> str:
-    path = SCHEMA_PATHS.get(page_type) or SCHEMA_PATHS["Hospital"]
+    path = SCHEMA_PATHS.get(page_type) or SCHEMA_PATHS.get("Hospital")
+    if not path:
+        raise FileNotFoundError(f"No schema path for {page_type}")
     return Path(path).read_text()
 
 def defaults_for(page_type: str):

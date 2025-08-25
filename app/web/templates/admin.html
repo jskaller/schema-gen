@@ -6,7 +6,10 @@
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center">
       <h5 class="card-title mb-0">Admin / Settings</h5>
-      <a href="/" class="btn btn-outline-secondary btn-sm">Home</a>
+      <div class="d-flex gap-2">
+        <a href="/admin/types" class="btn btn-outline-secondary btn-sm">Manage Page Types</a>
+        <a href="/" class="btn btn-outline-secondary btn-sm">Home</a>
+      </div>
     </div>
     {% if ok %}
       <div class="alert alert-success mt-3">Settings updated.</div>
@@ -39,31 +42,21 @@
         <div class="col-md-3 mb-3">
           <label class="form-label">Default Page Type (label)</label>
           <input class="form-control" name="page_type" value="{{ settings.page_type }}">
-          <div class="form-text">This is the label used in CSV rows if none is provided (e.g., "Hospital", "Community Outreach").</div>
+          <div class="form-text">This is the label looked up in your Page Types map.</div>
         </div>
         <div class="col-md-3 mb-3">
-          <label class="form-label">Use Defaults for Primary Type?</label>
+          <label class="form-label">Use Defaults?</label>
           <input type="checkbox" name="use_defaults" value="1">
         </div>
       </div>
-
       <div class="mb-3">
-        <label class="form-label">Page Type → Schema Map (JSON)</label>
-        <textarea class="form-control" name="page_type_map" rows="8">{{ settings.page_type_map | tojson(indent=2) }}</textarea>
-        <div class="form-text">
-          Format: {"Community Outreach": {"primary": "MedicalWebPage", "secondary": ["CommunityHealth","BreadcrumbList"]}, "Hospital":{"primary":"Hospital","secondary":[]}}
-        </div>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Required Fields (JSON list)</label>
+        <label class="form-label">Required Fields</label>
         <textarea class="form-control" name="required_fields" rows="3">{{ settings.required_fields | tojson }}</textarea>
       </div>
       <div class="mb-3">
-        <label class="form-label">Recommended Fields (JSON list)</label>
+        <label class="form-label">Recommended Fields</label>
         <textarea class="form-control" name="recommended_fields" rows="4">{{ settings.recommended_fields | tojson }}</textarea>
       </div>
-
       <div class="d-flex justify-content-between">
         <button class="btn btn-primary" type="submit">Save</button>
         <form method="post" action="/admin/test">

@@ -13,17 +13,7 @@
       "const": "https://schema.org"
     },
     "@type": {
-      "anyOf": [
-        {
-          "const": "MedicalWebPage"
-        },
-        {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        }
-      ]
+      "const": "MedicalWebPage"
     },
     "name": {
       "type": "string"
@@ -35,10 +25,11 @@
       "type": "string"
     },
     "breadcrumb": {},
+    "about": {},
     "dateModified": {
       "type": "string"
     },
-    "mainEntity": {}
+    "primaryImageOfPage": {}
   },
   "additionalProperties": true
 }
