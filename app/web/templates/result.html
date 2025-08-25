@@ -6,9 +6,25 @@
   <div class="col-lg-8">
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="card-title mb-3">Generated JSON‑LD</h5>
+        <div class="d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">Generated JSON‑LD</h5>
+          <div class="d-flex gap-2">
+            <button id="copyBtn" class="btn btn-outline-secondary btn-sm" onclick="copyText('jsonld-pre','copyBtn')">Copy JSON‑LD</button>
+            <form method="post" action="/export/jsonld" class="d-inline">
+              <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
+              <input type="hidden" name="url" value="{{ url }}">
+              <button class="btn btn-outline-primary btn-sm" type="submit">Download JSON‑LD</button>
+            </form>
+            <form method="post" action="/export/csv" class="d-inline">
+              <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
+              <input type="hidden" name="url" value="{{ url }}">
+              <input type="hidden" name="score" value="{{ overall }}">
+              <button class="btn btn-outline-primary btn-sm" type="submit">Download CSV (single)</button>
+            </form>
+          </div>
+        </div>
         {% if not valid %}
-          <div class="alert alert-warning">
+          <div class="alert alert-warning mt-3">
             <strong>Validation issues:</strong>
             <ul class="mb-0">
               {% for err in validation_errors %}
@@ -17,7 +33,7 @@
             </ul>
           </div>
         {% endif %}
-        <pre class="p-3 bg-light border rounded" style="white-space: pre-wrap">{{ jsonld | tojson(indent=2) }}</pre>
+        <pre id="jsonld-pre" class="p-3 bg-light border rounded mt-3" style="white-space: pre-wrap">{{ jsonld | tojson(indent=2) }}</pre>
       </div>
     </div>
 
@@ -61,16 +77,6 @@
             </tbody>
           </table>
         </div>
-        {% if comparison_notes and comparison_notes|length %}
-        <div class="alert alert-info mt-3">
-          <strong>Notes:</strong>
-          <ul class="mb-0">
-            {% for note in comparison_notes %}
-              <li>{{ note }}</li>
-            {% endfor %}
-          </ul>
-        </div>
-        {% endif %}
       </div>
     </div>
     {% endif %}
