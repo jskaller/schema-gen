@@ -7,19 +7,16 @@
     {% if error %}
       <div class="alert alert-danger">Error: {{ error }}</div>
     {% endif %}
-    <h5 class="card-title">Generate Schema from a URL</h5>
+    <div class="d-flex justify-content-between align-items-center">
+      <h5 class="card-title mb-0">Generate Schema from a URL</h5>
+      <a href="/batch" class="btn btn-outline-secondary btn-sm">Batch Ingest</a>
+    </div>
+
     <form method="post" action="/submit" class="mt-3">
       <div class="mb-3">
         <label class="form-label">Page URL</label>
         <input type="url" name="url" class="form-control" placeholder="https://example.org/page">
-        <div class="form-text">Provide a single URL here <em>or</em> use the batch box below.</div>
-      </div>
-
-      <div class="mb-3">
-        <label class="form-label">Batch URLs (one per line, optional)</label>
-        <textarea name="batch_urls" rows="5" class="form-control" placeholder="https://site1.example
-https://site2.example"></textarea>
-        <div class="form-text">If provided, we will process these URLs and return a CSV export.</div>
+        <div class="form-text">Provide a single URL here or go to <a href="/batch">Batch Ingest</a> for CSV/Sheets.</div>
       </div>
 
       <div class="row">

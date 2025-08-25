@@ -1,0 +1,47 @@
+
+{% extends "base.html" %}
+{% block title %}Schema Gen – Batch Ingest{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="card-title">Batch Ingest</h5>
+    <p class="text-muted">Upload a CSV or use a Google Sheets CSV link (Publish to web → CSV).</p>
+
+    {% if error %}
+      <div class="alert alert-danger">Error: {{ error }}</div>
+    {% endif %}
+    {% if warnings and warnings|length %}
+      <div class="alert alert-warning">
+        <strong>Warnings</strong>
+        <ul class="mb-0">
+          {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    <form class="mb-4" method="post" action="/batch/upload" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label class="form-label">CSV File</label>
+        <input class="form-control" type="file" name="file">
+        <div class="form-text">Headers recognized: url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2 (synonyms OK).</div>
+      </div>
+      <div class="text-end">
+        <button class="btn btn-primary" type="submit">Upload & Process</button>
+      </div>
+    </form>
+
+    <form method="post" action="/batch/fetch" class="mb-3">
+      <div class="mb-3">
+        <label class="form-label">Google Sheets CSV Link</label>
+        <input class="form-control" type="url" name="csv_url" placeholder="https://docs.google.com/spreadsheets/d/ID/export?format=csv">
+        <div class="form-text">Use a published-to-web CSV link. We do not require Google auth for this.</div>
+      </div>
+      <div class="text-end">
+        <button class="btn btn-outline-primary" type="submit">Fetch & Process</button>
+      </div>
+    </form>
+
+    <a href="/" class="btn btn-secondary">« Back</a>
+  </div>
+</div>
+{% endblock %}
