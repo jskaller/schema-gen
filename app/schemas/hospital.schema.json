@@ -1,3 +1,4 @@
+
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.org/schemas/hospital.schema.json",
@@ -29,7 +30,9 @@
       "required": ["@type", "audienceType"],
       "additionalProperties": true
     },
-    "dateModified": { "type": "string" }
+    "dateModified": { "type": "string" },
+    "sameAs": { "type": "array", "items": { "type": "string" } },
+    "medicalSpecialty": { "type": "string" }
   },
   "additionalProperties": true
 }

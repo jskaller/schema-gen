@@ -1,3 +1,4 @@
+
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -8,22 +9,17 @@ from app.services.extract import extract_clean_text
 from app.services.ai import get_provider, GenerationInputs
 from app.services.validate import validate_against_schema
 from app.services.score import score_jsonld
+from app.services.signals import extract_signals
 
-# Load schema file
 from pathlib import Path
 hospital_schema = Path("app/schemas/hospital.schema.json").read_text()
 
-app = FastAPI(title="Schema Gen", version="0.1.0")
+app = FastAPI(title="Schema Gen", version="0.2.0")
 templates = Jinja2Templates(directory="app/web/templates")
-
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None):
-    return templates.TemplateResponse(
-        "index.html",
-        {"request": request, "ok": ok, "error": error},
-    )
-
+    return templates.TemplateResponse("index.html", {"request": request, "ok": ok, "error": error})
 
 @app.post("/submit", response_class=HTMLResponse)
 async def submit(
@@ -38,8 +34,7 @@ async def submit(
     try:
         raw_html = await fetch_url(url)
         cleaned_text = extract_clean_text(raw_html)
-
-        # Generate JSON-LD via provider
+        sig = extract_signals(raw_html)
         provider = get_provider("dummy")
         payload = GenerationInputs(
             url=url,
@@ -47,20 +42,16 @@ async def submit(
             topic=topic,
             subject=subject,
             audience=audience,
-            address=address,
-            phone=phone,
+            address=address or sig.get("address"),
+            phone=phone or sig.get("phone"),
+            sameAs=sig.get("sameAs"),
             page_type="Hospital",
         )
         jsonld = provider.generate_jsonld(payload)
-
-        # Validate against our minimal schema
         valid, errors = validate_against_schema(jsonld, hospital_schema)
-
-        # Score
         required = ["@context", "@type", "name", "url"]
-        recommended = ["description", "telephone", "address", "audience", "dateModified"]
+        recommended = ["description", "telephone", "address", "audience", "dateModified", "sameAs", "medicalSpecialty"]
         overall, details = score_jsonld(jsonld, required, recommended)
-
         return templates.TemplateResponse(
             "result.html",
             {
@@ -69,8 +60,8 @@ async def submit(
                 "topic": topic,
                 "subject": subject,
                 "audience": audience,
-                "address": address,
-                "phone": phone,
+                "address": address or sig.get("address"),
+                "phone": phone or sig.get("phone"),
                 "excerpt": cleaned_text[:2000],
                 "length": len(cleaned_text),
                 "jsonld": jsonld,
@@ -81,6 +72,4 @@ async def submit(
             },
         )
     except Exception as e:
-        return RedirectResponse(
-            url=str(URL("/").include_query_params(error=str(e))), status_code=303
-        )
+        return RedirectResponse(url=str(URL("/").include_query_params(error=str(e))), status_code=303)
