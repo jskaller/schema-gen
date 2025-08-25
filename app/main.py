@@ -23,7 +23,7 @@ from app.services.compare import summarize_scores, pick_primary_by_type
 from pathlib import Path
 hospital_schema = Path("app/schemas/hospital.schema.json").read_text()
 
-app = FastAPI(title="Schema Gen", version="0.7.1")
+app = FastAPI(title="Schema Gen", version="0.7.3")
 templates = Jinja2Templates(directory="app/web/templates")
 
 # ------------------------------
@@ -143,7 +143,7 @@ def _csv_from_items(items: list[dict]) -> io.StringIO:
     return out
 
 # ------------------------------
-# Routes (bring back / and /submit)
+# Routes
 # ------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None):
@@ -176,7 +176,8 @@ async def submit(
                     items.append({"url": u, "overall": "", "valid": False, "jsonld": {"error": str(e)}})
             out = _csv_from_items(items)
             filename = f"schema-export-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
-            return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}""})
+            cd = f'attachment; filename="{filename}"'
+            return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": cd})
         else:
             if not url:
                 return RedirectResponse(url=str(URL("/").include_query_params(error="Please provide a URL")), status_code=303)
@@ -193,7 +194,8 @@ async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
     data = json.loads(jsonld)
     filename = _safe_filename_from_url(url, "schema", "json")
     payload = json.dumps(data, indent=2)
-    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    cd = f'attachment; filename="{filename}"'
+    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": cd})
 
 @app.post("/export/csv")
 async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
@@ -203,7 +205,8 @@ async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str =
     writer.writerow([url, score, jsonld])
     out.seek(0)
     filename = _safe_filename_from_url(url, "schema-single", "csv")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    cd = f'attachment; filename="{filename}"'
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": cd})
 
 # ------------------------------
 # Batch ingest + preview routes
@@ -232,7 +235,8 @@ async def batch_upload(file: UploadFile = File(...)):
         writer.writerow(row)
     out.seek(0)
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts})
+    cd = f'attachment; filename="schema-batch-{ts}.csv"'
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": cd})
 
 @app.post("/batch/fetch")
 async def batch_fetch(csv_url: str = Form(...)):
@@ -261,7 +265,8 @@ async def batch_fetch(csv_url: str = Form(...)):
         writer.writerow(row)
     out.seek(0)
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts})
+    cd = f'attachment; filename="schema-batch-{ts}.csv"'
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": cd})
 
 @app.post("/batch/preview_upload", response_class=HTMLResponse)
 async def batch_preview_upload(request: Request, file: UploadFile = File(...)):
@@ -307,4 +312,5 @@ async def batch_export_from_preview(rows_json: str = Form(...)):
         writer.writerow([it["url"], it["overall"], "yes" if it["valid"] else "no", json.dumps(it["jsonld"])])
     out.seek(0)
     filename = f"schema-batch-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    cd = f'attachment; filename="{filename}"'
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": cd})
