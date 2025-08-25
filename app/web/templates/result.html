@@ -21,16 +21,59 @@
       </div>
     </div>
 
+    {% if comparisons and comparisons|length %}
     <div class="card shadow-sm mb-3">
       <div class="card-body">
-        <h5 class="card-title mb-3">Refine Attempts</h5>
-        <ul class="mb-0">
-          {% for item in iterations %}
-            <li>Attempt {{ item.attempt }} → score {{ item.score }}</li>
-          {% endfor %}
-        </ul>
+        <h5 class="card-title mb-3">Comparisons</h5>
+        <div class="table-responsive">
+          <table class="table table-striped align-middle">
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Overall</th>
+                <th colspan="3">AI Consumption & Data Richness</th>
+                <th colspan="3">Schema Validity & Correctness</th>
+              </tr>
+              <tr>
+                <th></th>
+                <th></th>
+                <th>Connectivity</th>
+                <th>Richness</th>
+                <th>Clarity</th>
+                <th>Validity</th>
+                <th>Required</th>
+                <th>Recommended</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for row in comparisons %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td><strong>{{ row.score }}</strong></td>
+                <td>{{ row.subscores["AI Consumption & Data Richness"]["Entity Connectivity"] }}</td>
+                <td>{{ row.subscores["AI Consumption & Data Richness"]["Data Richness & Specificity"] }}</td>
+                <td>{{ row.subscores["AI Consumption & Data Richness"]["Data Clarity"] }}</td>
+                <td>{{ row.subscores["Schema Validity & Correctness"]["Schema Validity"] }}</td>
+                <td>{{ row.subscores["Schema Validity & Correctness"]["Required Fields"] }}</td>
+                <td>{{ row.subscores["Schema Validity & Correctness"]["Recommended Fields"] }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if comparison_notes and comparison_notes|length %}
+        <div class="alert alert-info mt-3">
+          <strong>Notes:</strong>
+          <ul class="mb-0">
+            {% for note in comparison_notes %}
+              <li>{{ note }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
       </div>
     </div>
+    {% endif %}
 
     <div class="card shadow-sm">
       <div class="card-body">

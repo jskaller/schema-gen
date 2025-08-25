@@ -11,11 +11,13 @@ from app.services.validate import validate_against_schema
 from app.services.score import score_jsonld
 from app.services.signals import extract_signals
 from app.services.refine import refine_to_perfect
+from app.services.jsonld_extract import extract_onpage_jsonld
+from app.services.compare import summarize_scores, pick_primary_by_type
 
 from pathlib import Path
 hospital_schema = Path("app/schemas/hospital.schema.json").read_text()
 
-app = FastAPI(title="Schema Gen", version="0.3.0")
+app = FastAPI(title="Schema Gen", version="0.4.0")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.get("/", response_class=HTMLResponse)
@@ -31,8 +33,12 @@ async def submit(
     audience: str | None = Form(None),
     address: str | None = Form(None),
     phone: str | None = Form(None),
+    compare_existing: str | None = Form(None),
+    competitor1: str | None = Form(None),
+    competitor2: str | None = Form(None),
 ):
     try:
+        # === Fetch and generate for target URL ===
         raw_html = await fetch_url(url)
         cleaned_text = extract_clean_text(raw_html)
         sig = extract_signals(raw_html)
@@ -57,7 +63,7 @@ async def submit(
         recommended = ["description", "telephone", "address", "audience", "dateModified", "sameAs", "medicalSpecialty"]
         overall, details = score_jsonld(jsonld, required, recommended)
 
-        # If not perfect, refine iteratively (heuristics; real LLM refine later)
+        # Refine to improve score
         final_jsonld, final_score, final_details, iterations = refine_to_perfect(
             base_jsonld=jsonld,
             cleaned_text=cleaned_text,
@@ -66,9 +72,34 @@ async def submit(
             score_fn=score_jsonld,
             max_attempts=3,
         )
-
-        # Re-validate after refine
         final_valid, final_errors = validate_against_schema(final_jsonld, hospital_schema)
+
+        # === Comparisons ===
+        comparisons = []
+        notes = []
+
+        # On-page existing schema
+        if compare_existing:
+            onpage = extract_onpage_jsonld(raw_html)
+            primary = pick_primary_by_type(onpage, "Hospital") if onpage else None
+            if primary:
+                comparisons.append(summarize_scores("On‑page JSON‑LD", primary, score_jsonld, required, recommended))
+            else:
+                notes.append("No on‑page JSON‑LD suitable for Hospital found.")
+
+        # Competitors
+        for label, comp_url in (("Competitor #1", competitor1), ("Competitor #2", competitor2)):
+            if comp_url:
+                try:
+                    comp_html = await fetch_url(comp_url)
+                    comp_items = extract_onpage_jsonld(comp_html)
+                    comp_primary = pick_primary_by_type(comp_items, "Hospital")
+                    if comp_primary:
+                        comparisons.append(summarize_scores(f"{label}", comp_primary, score_jsonld, required, recommended))
+                    else:
+                        notes.append(f"{label}: no suitable JSON‑LD found.")
+                except Exception as ce:
+                    notes.append(f"{label}: fetch error – {ce}")
 
         return templates.TemplateResponse(
             "result.html",
@@ -88,6 +119,8 @@ async def submit(
                 "overall": final_score,
                 "details": final_details,
                 "iterations": iterations,
+                "comparisons": comparisons,
+                "comparison_notes": notes,
             },
         )
     except Exception as e:
