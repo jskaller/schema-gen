@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Schema Gen – Result{% endblock %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-lg-8">
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Generated JSON‑LD</h5>
+        {% if not valid %}
+          <div class="alert alert-warning">
+            <strong>Validation issues:</strong>
+            <ul class="mb-0">
+              {% for err in validation_errors %}
+                <li>{{ err }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+        <pre class="p-3 bg-light border rounded" style="white-space: pre-wrap">{{ jsonld | tojson(indent=2) }}</pre>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Cleaned Content Preview</h5>
+        <p class="text-muted mb-2">
+          URL: <code>{{ url }}</code><br>
+          {% if topic %}Topic: <code>{{ topic }}</code><br>{% endif %}
+          {% if subject %}Subject: <code>{{ subject }}</code><br>{% endif %}
+          {% if audience %}Audience: <code>{{ audience }}</code><br>{% endif %}
+          {% if address %}Address: <code>{{ address }}</code><br>{% endif %}
+          {% if phone %}Phone: <code>{{ phone }}</code><br>{% endif %}
+          Total characters extracted: <strong>{{ length }}</strong>
+        </p>
+        <pre class="p-3 bg-light border rounded" style="white-space: pre-wrap">{{ excerpt }}</pre>
+        <a class="btn btn-secondary mt-3" href="/">« Back</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h5 class="card-title">Score</h5>
+        <div class="display-5">{{ overall }}/100</div>
+        <hr>
+        <h6>AI Consumption & Data Richness</h6>
+        <ul class="mb-3">
+          {% for k, v in details.subscores["AI Consumption & Data Richness"].items() %}
+            <li><strong>{{ k }}</strong>: {{ v }}</li>
+          {% endfor %}
+        </ul>
+        <h6>Schema Validity & Correctness</h6>
+        <ul class="mb-3">
+          {% for k, v in details.subscores["Schema Validity & Correctness"].items() %}
+            <li><strong>{{ k }}</strong>: {{ v }}</li>
+          {% endfor %}
+        </ul>
+        {% if details.recommendations and details.recommendations|length %}
+          <div class="alert alert-info">
+            <strong>Recommendations</strong>
+            <ul class="mb-0">
+              {% for r in details.recommendations %}
+                <li>{{ r }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

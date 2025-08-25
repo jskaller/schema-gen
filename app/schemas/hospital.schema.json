@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/schemas/hospital.schema.json",
+  "title": "Hospital JSON-LD (minimal)",
+  "type": "object",
+  "required": ["@context", "@type", "name", "url"],
+  "properties": {
+    "@context": { "const": "https://schema.org" },
+    "@type": { "const": "Hospital" },
+    "name": { "type": "string", "minLength": 1 },
+    "url": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "telephone": { "type": "string" },
+    "address": {
+      "type": "object",
+      "required": ["@type", "streetAddress"],
+      "properties": {
+        "@type": { "const": "PostalAddress" },
+        "streetAddress": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "audience": {
+      "type": "object",
+      "properties": {
+        "@type": { "const": "Audience" },
+        "audienceType": { "type": "string" }
+      },
+      "required": ["@type", "audienceType"],
+      "additionalProperties": true
+    },
+    "dateModified": { "type": "string" }
+  },
+  "additionalProperties": true
+}

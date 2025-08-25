@@ -4,6 +4,10 @@ PY?=python3
 
 setup:
 	$(PY) -m venv .venv
+	. .venv/bin/activate && $(PY) -m pip install -U pip wheel
+	. .venv/bin/activate && $(PY) -m pip install -r requirements.txt
+	. .venv/bin/activate && $(PY) -m playwright install --with-deps chromium
+	$(PY) -m venv .venv
 	. .venv/bin/activate && $(PY) -m pip install -U pip
 	. .venv/bin/activate && $(PY) -m pip install -e .
 	. .venv/bin/activate && $(PY) -m playwright install --with-deps chromium
