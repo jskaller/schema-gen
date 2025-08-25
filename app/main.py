@@ -12,10 +12,6 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import init_db, get_session
-from app.models import Run
-from app.settings_models import Settings, SQLModel
-from app.services.settings import get_settings, update_settings
-from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.csv_ingest import parse_csv
 from app.services.fetch import fetch_url
 from app.services.extract import extract_clean_text
@@ -26,11 +22,12 @@ from app.services.signals import extract_signals
 from app.services.refine import refine_to_perfect
 from app.services.jsonld_extract import extract_onpage_jsonld
 from app.services.compare import summarize_scores, pick_primary_by_type
+from app.services.history import record_run, list_runs, get_run as db_get_run
 
 from pathlib import Path
 hospital_schema = Path("app/schemas/hospital.schema.json").read_text()
 
-app = FastAPI(title="Schema Gen", version="1.0.0")
+app = FastAPI(title="Schema Gen", version="0.9.1")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.on_event("startup")
@@ -42,15 +39,12 @@ def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     return f"{prefix}-{host}-{ts}.{ext}"
 
-async def _process_single(url: str, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, session: AsyncSession):
+async def _process_single(url: str, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2):
     raw_html = await fetch_url(url)
     cleaned_text = extract_clean_text(raw_html)
     sig = extract_signals(raw_html)
 
-    # Load settings
-    s = await get_settings(session)
-    provider = get_provider(s.provider or "dummy")
-
+    provider = get_provider("dummy")
     payload = GenerationInputs(
         url=url,
         cleaned_text=cleaned_text,
@@ -60,14 +54,13 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         address=address or sig.get("address"),
         phone=phone or sig.get("phone"),
         sameAs=sig.get("sameAs"),
-        page_type=s.page_type or "Hospital",
+        page_type="Hospital",
     )
     jsonld = provider.generate_jsonld(payload)
 
-    # Validate/Score using settings-driven fields
     valid, errors = validate_against_schema(jsonld, hospital_schema)
-    required = s.required_fields or ["@context","@type","name","url"]
-    recommended = s.recommended_fields or ["description","telephone","address","audience","dateModified","sameAs","medicalSpecialty"]
+    required = ["@context", "@type", "name", "url"]
+    recommended = ["description", "telephone", "address", "audience", "dateModified", "sameAs", "medicalSpecialty"]
     overall, details = score_jsonld(jsonld, required, recommended)
 
     final_jsonld, final_score, final_details, iterations = refine_to_perfect(
@@ -84,17 +77,17 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
     notes = []
     if compare_existing:
         onpage = extract_onpage_jsonld(raw_html)
-        primary = pick_primary_by_type(onpage, s.page_type or "Hospital") if onpage else None
+        primary = pick_primary_by_type(onpage, "Hospital") if onpage else None
         if primary:
             comparisons.append(summarize_scores("On‑page JSON‑LD", primary, score_jsonld, required, recommended))
         else:
-            notes.append("No on‑page JSON‑LD suitable for page type found.")
+            notes.append("No on‑page JSON‑LD suitable for Hospital found.")
     for label, comp_url in (("Competitor #1", competitor1), ("Competitor #2", competitor2)):
         if comp_url:
             try:
                 comp_html = await fetch_url(comp_url)
                 comp_items = extract_onpage_jsonld(comp_html)
-                comp_primary = pick_primary_by_type(comp_items, s.page_type or "Hospital")
+                comp_primary = pick_primary_by_type(comp_items, "Hospital")
                 if comp_primary:
                     comparisons.append(summarize_scores(f"{label}", comp_primary, score_jsonld, required, recommended))
                 else:
@@ -121,32 +114,41 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         "comparison_notes": notes,
     }
 
+async def _process_row(row: dict) -> dict:
+    r = await _process_single(
+        url=(row.get("url") or "").strip(),
+        topic=row.get("topic") or None,
+        subject=row.get("subject") or None,
+        audience=row.get("audience") or None,
+        address=row.get("address") or None,
+        phone=row.get("phone") or None,
+        compare_existing=row.get("compare_existing") or None,
+        competitor1=row.get("competitor1") or None,
+        competitor2=row.get("competitor2") or None,
+    )
+    return {
+        "url": r["url"],
+        "overall": r["overall"],
+        "valid": r["valid"],
+        "validation_errors": r["validation_errors"],
+        "jsonld": r["jsonld"],
+        "comparisons": r["comparisons"],
+        "comparison_notes": r["comparison_notes"],
+        "excerpt": r["excerpt"],
+    }
+
+def _csv_from_items(items: list[dict]) -> io.StringIO:
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["url", "score", "valid", "jsonld"])
+    for it in items:
+        w.writerow([it["url"], it["overall"], "yes" if it["valid"] else "no", json.dumps(it["jsonld"])])
+    out.seek(0)
+    return out
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None):
     return templates.TemplateResponse("index.html", {"request": request, "ok": ok, "error": error})
-
-@app.get("/admin", response_class=HTMLResponse)
-async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None):
-    s = await get_settings(session)
-    return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": ok})
-
-@app.post("/admin", response_class=HTMLResponse)
-async def admin_post(
-    request: Request,
-    provider: str = Form("dummy"),
-    page_type: str = Form("Hospital"),
-    required_fields: str = Form(""),
-    recommended_fields: str = Form(""),
-    session: AsyncSession = Depends(get_session),
-):
-    try:
-        req = json.loads(required_fields) if required_fields.strip() else None
-        rec = json.loads(recommended_fields) if recommended_fields.strip() else None
-    except Exception as e:
-        s = await get_settings(session)
-        return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": None, "error": f"Invalid JSON lists: {e}"})
-    s = await update_settings(session, provider, page_type, req, rec)
-    return RedirectResponse(url="/admin?ok=1", status_code=303)
 
 @app.post("/submit", response_class=HTMLResponse)
 async def submit(
@@ -165,16 +167,122 @@ async def submit(
     try:
         if not url:
             return RedirectResponse(url=str(URL("/").include_query_params(error="Please provide a URL")), status_code=303)
-        result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, session)
+        result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2)
 
-        # Persist run
+        # persist
         await record_run(session, result)
 
         return templates.TemplateResponse("result.html", {"request": request, **result})
     except Exception as e:
         return RedirectResponse(url=str(URL("/").include_query_params(error=str(e))), status_code=303)
 
-# History
+# --------------------
+# Batch routes (RESTORED)
+# --------------------
+@app.get("/batch", response_class=HTMLResponse)
+async def batch_page(request: Request, error: str | None = None, warnings: list[str] | None = None):
+    return templates.TemplateResponse("batch.html", {"request": request, "error": error, "warnings": warnings or []})
+
+@app.post("/batch/upload")
+async def batch_upload(file: UploadFile = File(...)):
+    text = (await file.read()).decode("utf-8", errors="ignore")
+    rows, warnings = parse_csv(text)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            r = await _process_row(row)
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"])
+    writer.writeheader()
+    for row in processed:
+        writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-{ts}.csv"'})
+
+@app.post("/batch/fetch")
+async def batch_fetch(csv_url: str = Form(...)):
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            r = await client.get(csv_url)
+            r.raise_for_status()
+            content = r.text
+    except Exception as e:
+        return RedirectResponse(str(URL("/batch").include_query_params(error=str(e))), status_code=303)
+    rows, warnings = parse_csv(content)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            r = await _process_row(row)
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"])
+    writer.writeheader()
+    for row in processed:
+        writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-{ts}.csv"'})
+
+# Preview routes if you still have the preview templates present
+@app.post("/batch/preview_upload", response_class=HTMLResponse)
+async def batch_preview_upload(request: Request, file: UploadFile = File(...)):
+    text = (await file.read()).decode("utf-8", errors="ignore")
+    rows, warnings = parse_csv(text)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    items = []
+    for row in rows:
+        try:
+            items.append(await _process_row(row))
+        except Exception as e:
+            items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": ""})
+    return templates.TemplateResponse("batch_preview.html", {"request": request, "items": items})
+
+@app.post("/batch/preview_fetch", response_class=HTMLResponse)
+async def batch_preview_fetch(request: Request, csv_url: str = Form(...)):
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            r = await client.get(csv_url)
+            r.raise_for_status()
+            content = r.text
+    except Exception as e:
+        return RedirectResponse(str(URL("/batch").include_query_params(error=str(e))), status_code=303)
+    rows, warnings = parse_csv(content)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    items = []
+    for row in rows:
+        try:
+            items.append(await _process_row(row))
+        except Exception as e:
+            items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": ""})
+    return templates.TemplateResponse("batch_preview.html", {"request": request, "items": items})
+
+@app.post("/batch/export_from_preview")
+async def batch_export_from_preview(rows_json: str = Form(...)):
+    items = json.loads(rows_json)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["url", "score", "valid", "jsonld"])
+    for it in items:
+        writer.writerow([it["url"], it["overall"], "yes" if it["valid"] else "no", json.dumps(it["jsonld"])])
+    out.seek(0)
+    filename = f"schema-batch-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+# --------------------
+# History routes (from 09)
+# --------------------
 @app.get("/history", response_class=HTMLResponse)
 async def history_list(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
     rows = await list_runs(session, q=q or None, limit=200)
