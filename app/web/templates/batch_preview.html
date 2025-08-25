@@ -17,6 +17,7 @@
       <tr>
         <th>#</th>
         <th>URL</th>
+        <th>Page Type</th>
         <th>Score</th>
         <th>Valid</th>
         <th>Actions</th>
@@ -27,6 +28,7 @@
       <tr>
         <td>{{ loop.index }}</td>
         <td style="max-width: 360px; word-break: break-all;"><a href="{{ it.url }}" target="_blank">{{ it.url }}</a></td>
+        <td>{{ it.page_type_label }} → <code>{{ it.primary_type }}</code></td>
         <td><strong>{{ it.overall }}</strong></td>
         <td>
           {% if it.valid %}
@@ -39,10 +41,11 @@
           <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#jsonld-{{ loop.index }}" aria-expanded="false">JSON‑LD</button>
           <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#comp-{{ loop.index }}" aria-expanded="false">Comparisons</button>
           <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#text-{{ loop.index }}" aria-expanded="false">Text</button>
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advice-{{ loop.index }}" aria-expanded="false">Advice</button>
         </td>
       </tr>
       <tr class="bg-light">
-        <td colspan="5">
+        <td colspan="6">
           <div class="collapse" id="jsonld-{{ loop.index }}">
             <div class="p-3">
               <pre class="p-3 bg-white border rounded" style="white-space: pre-wrap">{{ it.jsonld | tojson(indent=2) }}</pre>
@@ -109,6 +112,17 @@
           <div class="collapse" id="text-{{ loop.index }}">
             <div class="p-3">
               <pre class="p-3 bg-white border rounded" style="white-space: pre-wrap; max-height: 20rem; overflow:auto">{{ it.excerpt }}</pre>
+            </div>
+          </div>
+          <div class="collapse" id="advice-{{ loop.index }}">
+            <div class="p-3">
+              {% if it.advice and it.advice|length %}
+                <div class="alert alert-secondary mb-0">
+                  <ul class="mb-0">{% for tip in it.advice %}<li>{{ tip }}</li>{% endfor %}</ul>
+                </div>
+              {% else %}
+                <div class="alert alert-success mb-0">Looks good — no obvious missing fields detected.</div>
+              {% endif %}
             </div>
           </div>
         </td>

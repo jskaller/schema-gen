@@ -11,12 +11,15 @@ async def _ensure_columns(session: AsyncSession):
     try:
         res = await session.execute(text("PRAGMA table_info(settings)"))
         cols = [row[1] for row in res.fetchall()]
-        alter_needed = []
+        alters = []
         if "provider_model" not in cols:
-            await session.execute(text("ALTER TABLE settings ADD COLUMN provider_model VARCHAR"))
+            alters.append("ALTER TABLE settings ADD COLUMN provider_model VARCHAR")
         if "page_type_map" not in cols:
-            await session.execute(text("ALTER TABLE settings ADD COLUMN page_type_map JSON"))
-        await session.commit()
+            alters.append("ALTER TABLE settings ADD COLUMN page_type_map TEXT")
+        for stmt in alters:
+            await session.execute(text(stmt))
+        if alters:
+            await session.commit()
     except Exception:
         pass
 
@@ -29,22 +32,15 @@ async def get_settings(session: AsyncSession) -> Settings:
         session.add(s)
         await session.commit()
         await session.refresh(s)
-    # backfill defaults if map missing
-    if not s.page_type_map:
-        s.page_type_map = {
-            "Hospital": {"primary": "Hospital", "secondary": []},
-            "MedicalClinic": {"primary": "MedicalClinic", "secondary": []},
-            "Physician": {"primary": "Physician", "secondary": []},
-        }
-        session.add(s); await session.commit(); await session.refresh(s)
     return s
 
 async def update_settings(session: AsyncSession, provider: str, page_type: str, required: list | None, recommended: list | None, provider_model: str | None = None, page_type_map: dict | None = None) -> Settings:
     s = await get_settings(session)
-    if provider:
+    if provider is not None:
         s.provider = provider
-    s.provider_model = provider_model or None
-    if page_type:
+    if provider_model is not None:
+        s.provider_model = provider_model or None
+    if page_type is not None:
         s.page_type = page_type
     if page_type_map is not None:
         s.page_type_map = page_type_map

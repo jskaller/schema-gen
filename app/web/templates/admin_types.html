@@ -1,0 +1,64 @@
+
+{% extends "base.html" %}
+{% block title %}Schema Gen – Page Types{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Page Types</h4>
+  <div>
+    <a href="/admin" class="btn btn-outline-secondary btn-sm">Back to Admin</a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="card-title">Existing Types</h5>
+        <table class="table table-sm align-middle">
+          <thead><tr><th>Label</th><th>Primary</th><th>Secondary</th><th class="text-end">Actions</th></tr></thead>
+          <tbody>
+            {% for label, cfg in mapping.items() %}
+            <tr>
+              <td><strong>{{ label }}</strong></td>
+              <td>{{ cfg.primary }}</td>
+              <td>{{ ', '.join(cfg.secondary) }}</td>
+              <td class="text-end">
+                <form method="post" action="/admin/types/delete" class="d-inline">
+                  <input type="hidden" name="label" value="{{ label }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card shadow-sm h-100">
+      <div class="card-body">
+        <h5 class="card-title">Add / Update Type</h5>
+        <form method="post" action="/admin/types/upsert">
+          <div class="mb-3">
+            <label class="form-label">Label (e.g., Community Outreach)</label>
+            <input class="form-control" name="label" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Primary Schema Type</label>
+            <input class="form-control" name="primary" placeholder="e.g., MedicalWebPage" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Secondary Schema Types (comma-separated)</label>
+            <input class="form-control" name="secondary" placeholder="e.g., CommunityHealth, BreadcrumbList">
+          </div>
+          <div class="text-end">
+            <button class="btn btn-primary" type="submit">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

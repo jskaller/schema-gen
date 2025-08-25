@@ -1,8 +1,7 @@
 
 from __future__ import annotations
 from typing import List, Dict, Any, Tuple, Optional
-import csv
-import io
+import csv, io
 
 EXPECTED = [
     "url", "page_type", "topic", "subject", "audience", "address", "phone",
@@ -10,16 +9,16 @@ EXPECTED = [
 ]
 
 SYNONYMS = {
-    "url": ["url", "page", "page_url", "link", "target"],
-    "page_type": ["page_type", "pagetype", "type", "page type"],
-    "topic": ["topic", "keyword", "keywords", "medicalSpecialty"],
-    "subject": ["subject", "name", "title", "entity"],
-    "audience": ["audience", "audienceType", "intended_audience"],
-    "address": ["address", "street", "streetAddress"],
-    "phone": ["phone", "telephone", "tel"],
-    "compare_existing": ["compare_existing", "compare", "onpage", "existing"],
-    "competitor1": ["competitor1", "competitor", "competitor_1", "competitor_a"],
-    "competitor2": ["competitor2", "competitor_2", "competitor_b"],
+    "url": ["url","page","page_url","link","target"],
+    "page_type": ["page_type","type","label"],
+    "topic": ["topic","keyword","keywords","medicalSpecialty"],
+    "subject": ["subject","name","title","entity"],
+    "audience": ["audience","audienceType","intended_audience"],
+    "address": ["address","street","streetAddress"],
+    "phone": ["phone","telephone","tel"],
+    "compare_existing": ["compare_existing","compare","onpage","existing"],
+    "competitor1": ["competitor1","competitor","competitor_1","competitor_a"],
+    "competitor2": ["competitor2","competitor_2","competitor_b"],
 }
 
 def _normalize_header(h: str) -> str:
@@ -28,7 +27,7 @@ def _normalize_header(h: str) -> str:
 def _guess_key(header: str) -> Optional[str]:
     h = _normalize_header(header)
     for k, names in SYNONYMS.items():
-        if h in [ _normalize_header(n) for n in names ]:
+        if h in [_normalize_header(n) for n in names]:
             return k
     return None
 
