@@ -1,83 +1,9 @@
 
 {% extends "base.html" %}
-{% block title %}Schema Gen – History Detail{% endblock %}
+{% block title %}Schema Gen – Run Detail{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0">Run #{{ run.id }}</h4>
-  <a href="/history" class="btn btn-outline-secondary btn-sm">Back</a>
-</div>
-<div class="row g-3">
-  <div class="col-lg-8">
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <h5 class="card-title mb-2">JSON‑LD</h5>
-        <pre class="p-3 bg-light border rounded" style="white-space: pre-wrap">{{ run.jsonld | tojson(indent=2) }}</pre>
-      </div>
-    </div>
-
-    {% if run.comparisons and run.comparisons|length %}
-    <div class="card shadow-sm mb-3">
-      <div class="card-body">
-        <h5 class="card-title mb-2">Comparisons</h5>
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered">
-            <thead>
-              <tr>
-                <th>Source</th>
-                <th>Overall</th>
-                <th colspan="3">AI Consumption & Data Richness</th>
-                <th colspan="3">Schema Validity & Correctness</th>
-              </tr>
-              <tr>
-                <th></th>
-                <th></th>
-                <th>Connectivity</th>
-                <th>Richness</th>
-                <th>Clarity</th>
-                <th>Validity</th>
-                <th>Required</th>
-                <th>Recommended</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in run.comparisons %}
-              <tr>
-                <td>{{ row.name }}</td>
-                <td><strong>{{ row.score }}</strong></td>
-                <td>{{ row.subscores["AI Consumption & Data Richness"]["Entity Connectivity"] }}</td>
-                <td>{{ row.subscores["AI Consumption & Data Richness"]["Data Richness & Specificity"] }}</td>
-                <td>{{ row.subscores["AI Consumption & Data Richness"]["Data Clarity"] }}</td>
-                <td>{{ row.subscores["Schema Validity & Correctness"]["Schema Validity"] }}</td>
-                <td>{{ row.subscores["Schema Validity & Correctness"]["Required Fields"] }}</td>
-                <td>{{ row.subscores["Schema Validity & Correctness"]["Recommended Fields"] }}</td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-  </div>
-
-  <div class="col-lg-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h5 class="card-title">Meta</h5>
-        <ul class="mb-3">
-          <li><strong>URL:</strong> <code>{{ run.url }}</code></li>
-          <li><strong>Created:</strong> {{ run.created_at }}</li>
-          <li><strong>Score:</strong> {{ run.score_overall }}</li>
-          <li><strong>Valid:</strong> {{ 'yes' if run.valid else 'no' }}</li>
-        </ul>
-        {% if run.validation_errors and run.validation_errors|length %}
-        <div class="alert alert-warning">
-          <strong>Validation issues:</strong>
-          <ul class="mb-0">{% for e in run.validation_errors %}<li>{{ e }}</li>{% endfor %}</ul>
-        </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-</div>
+<h4>Run #{{ run.id }}</h4>
+<p><strong>URL:</strong> {{ run.url }}</p>
+<p><strong>Score:</strong> {{ run.score_overall }} | <strong>Valid:</strong> {% if run.valid %}Yes{% else %}No{% endif %}</p>
+{% if run.jsonld %}<pre class="p-3 bg-light border rounded" style="white-space: pre-wrap;">{{ run.jsonld }}</pre>{% endif %}
 {% endblock %}

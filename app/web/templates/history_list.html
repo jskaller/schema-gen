@@ -2,37 +2,18 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – History{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0">History</h4>
-  <form method="get" action="/history" class="d-flex gap-2">
-    <input class="form-control form-control-sm" type="text" name="q" value="{{ q or '' }}" placeholder="Filter by URL">
-    <button class="btn btn-sm btn-outline-secondary" type="submit">Search</button>
-  </form>
-</div>
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
-    <thead>
-      <tr>
-        <th>ID</th>
-        <th>Created</th>
-        <th>URL</th>
-        <th>Score</th>
-        <th>Valid</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r in rows %}
-      <tr>
-        <td>{{ r.id }}</td>
-        <td>{{ r.created_at }}</td>
-        <td style="max-width: 420px; word-break: break-all">{{ r.url }}</td>
-        <td><strong>{{ r.score_overall }}</strong></td>
-        <td>{% if r.valid %}<span class="badge bg-success">valid</span>{% else %}<span class="badge bg-warning text-dark">issues</span>{% endif %}</td>
-        <td><a class="btn btn-sm btn-outline-primary" href="/history/{{ r.id }}">View</a></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<h4>History</h4>
+<table class="table table-sm">
+  <thead><tr><th>When</th><th>URL</th><th>Score</th><th>Valid</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.created_at }}</td>
+      <td><a href="/history/{{ r.id }}">{{ r.url }}</a></td>
+      <td>{{ r.score_overall }}</td>
+      <td>{% if r.valid %}✅{% else %}⚠️{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
 {% endblock %}

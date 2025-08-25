@@ -1,16 +1,17 @@
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, Depends
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import URL
 
-import io, csv, json
+import io, csv, json, sys
 import httpx
 from datetime import datetime
 from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+# Services / DB
 from app.db import init_db, get_session
 from app.services.settings import get_settings, update_settings
 from app.services.providers import list_ollama_models
@@ -23,20 +24,32 @@ from app.services.schemas import load_schema, defaults_for, AVAILABLE_PAGE_TYPES
 from app.services.validate import validate_against_schema
 from app.services.score import score_jsonld
 from app.services.signals import extract_signals
-from app.services.refine import refine_to_perfect
 from app.services.jsonld_extract import extract_onpage_jsonld
 from app.services.compare import summarize_scores, pick_primary_by_type
 from app.services.advice import advise
-from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.normalize import normalize_jsonld
 from app.services.graph import assemble_graph
+from app.services.history import record_run, list_runs, get_run as db_get_run
 
-app = FastAPI(title="Schema Gen", version="1.6.0")
+app = FastAPI(title="Schema Gen", version="1.6.1")
 templates = Jinja2Templates(directory="app/web/templates")
+
+# ---- Diagnostics ----
+@app.get("/__routes")
+async def __routes():
+    data = [{"path": getattr(r, "path", "?"), "methods": sorted(list(getattr(r, "methods", {'*'})))} for r in app.router.routes]
+    return JSONResponse(data)
 
 @app.on_event("startup")
 async def _startup():
     await init_db()
+    # print route table to stderr for sanity
+    paths = []
+    for r in app.router.routes:
+        method = getattr(r, "methods", {"*"})
+        path = getattr(r, "path", "?")
+        paths.append(f"{','.join(sorted(method))} {path}")
+    print("[ROUTES at startup]\n" + "\n".join(sorted(paths)), file=sys.stderr)
 
 def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
     host = urlparse(url).netloc.replace(":", "_") or "schema"
@@ -70,26 +83,23 @@ async def _process_single(
     )
     base_jsonld = await provider.generate_jsonld(payload)
 
-    # Normalize the primary node
     inputs = {"topic": topic, "subject": subject, "address": address, "phone": phone}
     primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
 
-    # Assemble @graph with secondary stubs if needed
     if secondary_types:
         final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs)
     else:
         final_jsonld = primary_node
 
-    # Validate & score using schema for the primary type
     schema_json = load_schema(primary_type)
     effective_required = (s.required_fields or defaults_for(primary_type)["required"])
     effective_recommended = (s.recommended_fields or defaults_for(primary_type)["recommended"])
-    valid, errors = validate_against_schema(final_jsonld["@graph"][0] if "@graph" in final_jsonld else final_jsonld, schema_json)
+
+    # Validate primary (root of graph if present)
+    primary_for_validation = final_jsonld["@graph"][0] if isinstance(final_jsonld, dict) and "@graph" in final_jsonld else final_jsonld
+    valid, errors = validate_against_schema(primary_for_validation, schema_json)
     overall, details = score_jsonld(final_jsonld, effective_required, effective_recommended)
     tips = advise(final_jsonld, effective_required, effective_recommended)
-
-    # (Optional refine step could be adapted to graph; keep as-is for now)
-    iterations = 0
 
     return {
         "url": url, "page_type_label": page_label, "primary_type": primary_type, "secondary_types": secondary_types,
@@ -97,13 +107,13 @@ async def _process_single(
         "address": primary_node.get("address"), "phone": primary_node.get("telephone"),
         "excerpt": cleaned_text[:2000], "length": len(cleaned_text),
         "jsonld": final_jsonld, "valid": valid, "validation_errors": errors,
-        "overall": overall, "details": details, "iterations": iterations,
+        "overall": overall, "details": details, "iterations": 0,
         "comparisons": [], "comparison_notes": [],
         "advice": tips,
         "effective_required": effective_required, "effective_recommended": effective_recommended,
     }
 
-# Routes (index + submit only shown here for brevity)
+# ----------------- Core pages -----------------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None, session: AsyncSession = Depends(get_session)):
     mapping = await get_map(session)
@@ -129,3 +139,180 @@ async def submit(
     result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, page_type, session)
     await record_run(session, result)
     return templates.TemplateResponse("result.html", {"request": request, **result})
+
+# ----------------- Admin -----------------
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None, error: str | None = None):
+    s = await get_settings(session)
+    models = await list_ollama_models()
+    mapping = await get_map(session)
+    return templates.TemplateResponse("admin.html", {
+        "request": request, "settings": s, "ok": ok, "error": error,
+        "ollama_models": models, "page_types": AVAILABLE_PAGE_TYPES, "mapping": mapping
+    })
+
+@app.post("/admin", response_class=HTMLResponse)
+async def admin_post(
+    request: Request,
+    provider: str = Form("dummy"),
+    provider_model: str = Form(""),
+    page_type: str = Form("Hospital"),
+    required_fields: str = Form(""),
+    recommended_fields: str = Form(""),
+    use_defaults: str = Form(None),
+    page_type_map: str = Form(None),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        if use_defaults:
+            defs = defaults_for(page_type)
+            req, rec = defs["required"], defs["recommended"]
+        else:
+            req = json.loads(required_fields) if required_fields.strip() else None
+            rec = json.loads(recommended_fields) if recommended_fields.strip() else None
+        ptm = json.loads(page_type_map) if page_type_map else None
+    except Exception as e:
+        return await admin_get(request, session, error=str(e))
+    await update_settings(session, provider, page_type, req, rec, provider_model or None, ptm)
+    return RedirectResponse(url="/admin?ok=1", status_code=303)
+
+@app.post("/admin/test", response_class=HTMLResponse)
+async def admin_test(request: Request, session: AsyncSession = Depends(get_session)):
+    s = await get_settings(session)
+    provider = get_provider(s.provider, model=s.provider_model)
+    sample_inputs = GenerationInputs(url="http://example.org", cleaned_text="Example text", page_type=s.page_type)
+    result = await provider.generate_jsonld(sample_inputs)
+    models = await list_ollama_models()
+    mapping = await get_map(session)
+    return templates.TemplateResponse("admin.html", {
+        "request": request, "settings": s, "test_result": result, "ollama_models": models, "page_types": AVAILABLE_PAGE_TYPES, "mapping": mapping
+    })
+
+# Page Types Manager
+@app.get("/admin/types", response_class=HTMLResponse)
+async def admin_types(request: Request, session: AsyncSession = Depends(get_session)):
+    mapping = await get_map(session)
+    return templates.TemplateResponse("admin_types.html", {"request": request, "mapping": mapping})
+
+@app.post("/admin/types/upsert", response_class=HTMLResponse)
+async def admin_types_upsert(
+    request: Request,
+    label: str = Form(...),
+    primary: str = Form(...),
+    secondary: str = Form(""),
+    session: AsyncSession = Depends(get_session),
+):
+    secondaries = [s.strip() for s in secondary.split(",") if s.strip()]
+    await upsert_type(session, label, primary, secondaries)
+    return RedirectResponse(url="/admin/types", status_code=303)
+
+@app.post("/admin/types/delete", response_class=HTMLResponse)
+async def admin_types_delete(
+    request: Request,
+    label: str = Form(...),
+    session: AsyncSession = Depends(get_session),
+):
+    await delete_type(session, label)
+    return RedirectResponse(url="/admin/types", status_code=303)
+
+# ----------------- History -----------------
+@app.get("/history", response_class=HTMLResponse)
+async def history_list_page(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
+    rows = await list_runs(session, q=q or None, limit=200)
+    return templates.TemplateResponse("history_list.html", {"request": request, "rows": rows, "q": q})
+
+@app.get("/history/{run_id}", response_class=HTMLResponse)
+async def history_detail(request: Request, run_id: int, session: AsyncSession = Depends(get_session)):
+    run = await db_get_run(session, run_id)
+    if not run:
+        return RedirectResponse(url="/history", status_code=303)
+    return templates.TemplateResponse("history_detail.html", {"request": request, "run": run})
+
+# ----------------- Export (single) -----------------
+@app.post("/export/jsonld")
+async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
+    data = json.loads(jsonld)
+    filename = _safe_filename_from_url(url, "schema", "json")
+    payload = json.dumps(data, indent=2)
+    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+@app.post("/export/csv")
+async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["url", "score", "jsonld"])
+    writer.writerow([url, score, jsonld])
+    out.seek(0)
+    filename = _safe_filename_from_url(url, "schema-single", "csv")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+# ----------------- Batch ingest + preview -----------------
+def _csv_from_items(items: list[dict]) -> io.StringIO:
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["url","page_type_label","primary_type","secondary_types","score","valid","jsonld"])
+    for it in items:
+        writer.writerow([it["url"], it.get("page_type_label",""), it.get("primary_type",""), json.dumps(it.get("secondary_types",[])), it["overall"], "yes" if it["valid"] else "no", json.dumps(it["jsonld"])])
+    out.seek(0)
+    return out
+
+@app.get("/batch", response_class=HTMLResponse)
+async def batch_page(request: Request, error: str | None = None, warnings: list[str] | None = None):
+    return templates.TemplateResponse("batch.html", {"request": request, "error": error, "warnings": warnings or []})
+
+@app.post("/batch/upload")
+async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
+    text = (await file.read()).decode("utf-8", errors="ignore")
+    rows, warnings = parse_csv(text)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            r = await _process_single(
+                row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"),
+                row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"),
+                row.get("page_type") or None, session
+            )
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"])
+    writer.writeheader()
+    for row in processed:
+        writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts})
+
+@app.post("/batch/fetch")
+async def batch_fetch(csv_url: str = Form(...), session: AsyncSession = Depends(get_session)):
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            r = await client.get(csv_url)
+            r.raise_for_status()
+            content = r.text
+    except Exception as e:
+        return RedirectResponse(str(URL("/batch").include_query_params(error=str(e))), status_code=303)
+    rows, warnings = parse_csv(content)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    items = []
+    for row in rows:
+        try:
+            items.append(await _process_single(
+                row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"),
+                row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"),
+                row.get("page_type") or None, session
+            ))
+        except Exception as e:
+            items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": "", "advice": []})
+    return templates.TemplateResponse("batch_preview.html", {"request": request, "items": items})
+
+@app.post("/batch/export_from_preview")
+async def batch_export_from_preview(rows_json: str = Form(...)):
+    items = json.loads(rows_json)
+    out = _csv_from_items(items)
+    filename = f"schema-batch-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})

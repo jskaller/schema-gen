@@ -2,75 +2,42 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Admin{% endblock %}
 {% block content %}
-<div class="card shadow-sm">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center">
-      <h5 class="card-title mb-0">Admin / Settings</h5>
-      <div class="d-flex gap-2">
-        <a href="/admin/types" class="btn btn-outline-secondary btn-sm">Manage Page Types</a>
-        <a href="/" class="btn btn-outline-secondary btn-sm">Home</a>
-      </div>
-    </div>
-    {% if ok %}
-      <div class="alert alert-success mt-3">Settings updated.</div>
-    {% endif %}
-    {% if error %}
-      <div class="alert alert-danger mt-3">{{ error }}</div>
-    {% endif %}
-
-    <form method="post" action="/admin" class="mt-3">
-      <div class="row">
-        <div class="col-md-3 mb-3">
-          <label class="form-label">Provider</label>
-          <select name="provider" class="form-select">
-            <option value="dummy" {% if settings.provider=='dummy' %}selected{% endif %}>Dummy (no API)</option>
-            <option value="ollama" {% if settings.provider=='ollama' %}selected{% endif %}>Ollama (local)</option>
-          </select>
-        </div>
-        <div class="col-md-3 mb-3">
-          <label class="form-label">Model</label>
-          {% if ollama_models and ollama_models|length %}
-            <select name="provider_model" class="form-select">
-              {% for m in ollama_models %}
-                <option value="{{ m }}" {% if settings.provider_model==m %}selected{% endif %}>{{ m }}</option>
-              {% endfor %}
-            </select>
-          {% else %}
-            <input class="form-control" name="provider_model" value="{{ settings.provider_model or '' }}">
-          {% endif %}
-        </div>
-        <div class="col-md-3 mb-3">
-          <label class="form-label">Default Page Type (label)</label>
-          <input class="form-control" name="page_type" value="{{ settings.page_type }}">
-          <div class="form-text">This is the label looked up in your Page Types map.</div>
-        </div>
-        <div class="col-md-3 mb-3">
-          <label class="form-label">Use Defaults?</label>
-          <input type="checkbox" name="use_defaults" value="1">
-        </div>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Required Fields</label>
-        <textarea class="form-control" name="required_fields" rows="3">{{ settings.required_fields | tojson }}</textarea>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Recommended Fields</label>
-        <textarea class="form-control" name="recommended_fields" rows="4">{{ settings.recommended_fields | tojson }}</textarea>
-      </div>
-      <div class="d-flex justify-content-between">
-        <button class="btn btn-primary" type="submit">Save</button>
-        <form method="post" action="/admin/test">
-          <button class="btn btn-outline-secondary" type="submit">Test Provider</button>
-        </form>
-      </div>
-    </form>
-
-    {% if test_result %}
-      <div class="alert alert-info mt-3">
-        <strong>Test Result</strong>
-        <pre style="white-space: pre-wrap">{{ test_result | tojson(indent=2) }}</pre>
-      </div>
-    {% endif %}
-  </div>
+<h4>Admin</h4>
+{% if ok %}<div class="alert alert-success">Saved.</div>{% endif %}
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+<div class="mb-3">
+  <a href="/admin/types" class="btn btn-sm btn-outline-primary">Manage Page Types</a>
 </div>
+<form method="post" action="/admin">
+  <div class="row g-3">
+    <div class="col-md-4">
+      <label class="form-label">Provider</label>
+      <select class="form-select" name="provider">
+        <option value="dummy" {% if settings.provider == 'dummy' %}selected{% endif %}>Dummy</option>
+        <option value="ollama" {% if settings.provider == 'ollama' %}selected{% endif %}>Ollama</option>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Model (Ollama)</label>
+      <select class="form-select" name="provider_model">
+        <option value="">(default)</option>
+        {% for m in ollama_models %}<option value="{{ m }}" {% if settings.provider_model == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label">Default Page Type</label>
+      <select class="form-select" name="page_type">
+        {% for p in page_types %}<option value="{{ p }}" {% if settings.page_type == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+      </select>
+    </div>
+  </div>
+  <div class="text-end mt-3">
+    <button class="btn btn-primary" type="submit">Save</button>
+  </div>
+</form>
+{% if test_result %}
+<hr>
+<h5>Provider Test Result</h5>
+<pre class="p-3 bg-light border rounded">{{ test_result | tojson(indent=2) }}</pre>
+{% endif %}
 {% endblock %}

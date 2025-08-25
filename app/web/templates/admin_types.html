@@ -2,19 +2,13 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Page Types{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0">Page Types</h4>
-  <div class="d-flex gap-2">
-    <a href="/admin" class="btn btn-outline-secondary btn-sm">Back to Admin</a>
-  </div>
-</div>
-
+<h4>Page Types</h4>
 <div class="row g-3">
   <div class="col-lg-6">
-    <div class="card shadow-sm h-100">
+    <div class="card">
       <div class="card-body">
-        <h5 class="card-title">Existing Types</h5>
-        <table class="table table-sm align-middle">
+        <h5>Existing</h5>
+        <table class="table table-sm">
           <thead><tr><th>Label</th><th>Primary</th><th>Secondary</th><th class="text-end">Actions</th></tr></thead>
           <tbody>
             {% for label, cfg in mapping.items() %}
@@ -35,39 +29,15 @@
       </div>
     </div>
   </div>
-
   <div class="col-lg-6">
-    <div class="card shadow-sm h-100">
+    <div class="card">
       <div class="card-body">
-        <h5 class="card-title">Add / Update Type</h5>
+        <h5>Add / Update</h5>
         <form method="post" action="/admin/types/upsert">
-          <div class="mb-3">
-            <label class="form-label">Label (e.g., Community Outreach)</label>
-            <input class="form-control" name="label" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Primary Schema Type</label>
-            <select class="form-select" name="primary">
-              {% for t in common_primary %}
-                <option value="{{ t }}">{{ t }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">Or custom:</div>
-            <input class="form-control mt-1" name="primary_custom" placeholder="Custom primary type (optional)">
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Secondary Schema Types</label>
-            <select class="form-select" name="secondary_select" multiple size="6">
-              {% for t in common_secondary %}
-                <option value="{{ t }}">{{ t }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text">Hold Cmd/Ctrl to multi-select. Or add custom, comma-separated:</div>
-            <input class="form-control mt-1" name="secondary_custom" placeholder="e.g., BreadcrumbList, CommunityHealth">
-          </div>
-          <div class="text-end">
-            <button class="btn btn-primary" type="submit">Save</button>
-          </div>
+          <div class="mb-2"><label class="form-label">Label</label><input class="form-control" name="label" required></div>
+          <div class="mb-2"><label class="form-label">Primary</label><input class="form-control" name="primary" placeholder="e.g., MedicalOrganization" required></div>
+          <div class="mb-2"><label class="form-label">Secondary (comma-separated)</label><input class="form-control" name="secondary" placeholder="MedicalWebPage, Hospital, MedicalSpecialty, BreadcrumbList"></div>
+          <div class="text-end"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
         </form>
       </div>
     </div>

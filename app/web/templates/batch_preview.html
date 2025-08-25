@@ -2,133 +2,17 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Batch Preview{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h4 class="mb-0">Batch Preview ({{ items|length }} rows)</h4>
-  <form method="post" action="/batch/export_from_preview">
-    <input type="hidden" name="rows_json" value='{{ items | tojson }}'>
-    <button class="btn btn-primary btn-sm" type="submit">Download CSV</button>
-    <a href="/batch" class="btn btn-outline-secondary btn-sm">Back</a>
-  </form>
+<h4>Batch Preview</h4>
+{% for it in items %}
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between"><strong>{{ it.url }}</strong><span>Score: {{ it.overall }} | Valid: {% if it.valid %}Yes{% else %}No{% endif %}</span></div>
+    <pre class="p-2 bg-light border rounded mt-2" style="white-space: pre-wrap;">{{ it.jsonld | tojson(indent=2) }}</pre>
+  </div>
 </div>
-
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>URL</th>
-        <th>Page Type</th>
-        <th>Score</th>
-        <th>Valid</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for it in items %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td style="max-width: 360px; word-break: break-all;"><a href="{{ it.url }}" target="_blank">{{ it.url }}</a></td>
-        <td>{{ it.page_type_label }} → <code>{{ it.primary_type }}</code></td>
-        <td><strong>{{ it.overall }}</strong></td>
-        <td>
-          {% if it.valid %}
-            <span class="badge bg-success">valid</span>
-          {% else %}
-            <span class="badge bg-warning text-dark">issues</span>
-          {% endif %}
-        </td>
-        <td>
-          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#jsonld-{{ loop.index }}" aria-expanded="false">JSON‑LD</button>
-          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#comp-{{ loop.index }}" aria-expanded="false">Comparisons</button>
-          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#text-{{ loop.index }}" aria-expanded="false">Text</button>
-          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#advice-{{ loop.index }}" aria-expanded="false">Advice</button>
-        </td>
-      </tr>
-      <tr class="bg-light">
-        <td colspan="6">
-          <div class="collapse" id="jsonld-{{ loop.index }}">
-            <div class="p-3">
-              <pre class="p-3 bg-white border rounded" style="white-space: pre-wrap">{{ it.jsonld | tojson(indent=2) }}</pre>
-              {% if it.validation_errors and it.validation_errors|length %}
-              <div class="alert alert-warning mt-2">
-                <strong>Validation issues:</strong>
-                <ul class="mb-0">
-                  {% for err in it.validation_errors %}<li>{{ err }}</li>{% endfor %}
-                </ul>
-              </div>
-              {% endif %}
-            </div>
-          </div>
-          <div class="collapse" id="comp-{{ loop.index }}">
-            <div class="p-3">
-              {% if it.comparisons and it.comparisons|length %}
-              <div class="table-responsive">
-                <table class="table table-sm table-bordered">
-                  <thead>
-                    <tr>
-                      <th>Source</th>
-                      <th>Overall</th>
-                      <th colspan="3">AI Consumption & Data Richness</th>
-                      <th colspan="3">Schema Validity & Correctness</th>
-                    </tr>
-                    <tr>
-                      <th></th>
-                      <th></th>
-                      <th>Connectivity</th>
-                      <th>Richness</th>
-                      <th>Clarity</th>
-                      <th>Validity</th>
-                      <th>Required</th>
-                      <th>Recommended</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for row in it.comparisons %}
-                    <tr>
-                      <td>{{ row.name }}</td>
-                      <td><strong>{{ row.score }}</strong></td>
-                      <td>{{ row.subscores["AI Consumption & Data Richness"]["Entity Connectivity"] }}</td>
-                      <td>{{ row.subscores["AI Consumption & Data Richness"]["Data Richness & Specificity"] }}</td>
-                      <td>{{ row.subscores["AI Consumption & Data Richness"]["Data Clarity"] }}</td>
-                      <td>{{ row.subscores["Schema Validity & Correctness"]["Schema Validity"] }}</td>
-                      <td>{{ row.subscores["Schema Validity & Correctness"]["Required Fields"] }}</td>
-                      <td>{{ row.subscores["Schema Validity & Correctness"]["Recommended Fields"] }}</td>
-                    </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-              {% endif %}
-              {% if it.comparison_notes and it.comparison_notes|length %}
-              <div class="alert alert-info">
-                <strong>Notes:</strong>
-                <ul class="mb-0">
-                  {% for note in it.comparison_notes %}<li>{{ note }}</li>{% endfor %}
-                </ul>
-              </div>
-              {% endif %}
-            </div>
-          </div>
-          <div class="collapse" id="text-{{ loop.index }}">
-            <div class="p-3">
-              <pre class="p-3 bg-white border rounded" style="white-space: pre-wrap; max-height: 20rem; overflow:auto">{{ it.excerpt }}</pre>
-            </div>
-          </div>
-          <div class="collapse" id="advice-{{ loop.index }}">
-            <div class="p-3">
-              {% if it.advice and it.advice|length %}
-                <div class="alert alert-secondary mb-0">
-                  <ul class="mb-0">{% for tip in it.advice %}<li>{{ tip }}</li>{% endfor %}</ul>
-                </div>
-              {% else %}
-                <div class="alert alert-success mb-0">Looks good — no obvious missing fields detected.</div>
-              {% endif %}
-            </div>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% endfor %}
+<form method="post" action="/batch/export_from_preview">
+  <input type="hidden" name="rows_json" value='{{ items | tojson }}'>
+  <button class="btn btn-primary btn-sm" type="submit">Download CSV</button>
+</form>
 {% endblock %}

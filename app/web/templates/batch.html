@@ -1,36 +1,16 @@
 
 {% extends "base.html" %}
-{% block title %}Schema Gen – Batch Ingest{% endblock %}
+{% block title %}Schema Gen – Batch{% endblock %}
 {% block content %}
-<div class="card shadow-sm">
-  <div class="card-body">
-    <h5 class="card-title">Batch Ingest</h5>
-    <p class="text-muted">Upload a CSV or use a Google Sheets CSV link. Columns supported: <code>url</code>, <code>page_type</code>, <code>topic</code>, <code>subject</code>, <code>audience</code>, <code>address</code>, <code>phone</code>, <code>compare_existing</code>, <code>competitor1</code>, <code>competitor2</code>.</p>
-
-    {% if error %}
-      <div class="alert alert-danger">Error: {{ error }}</div>
-    {% endif %}
-    {% if warnings and warnings|length %}
-      <div class="alert alert-warning">
-        <strong>Warnings</strong>
-        <ul class="mb-0">
-          {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
-        </ul>
-      </div>
-    {% endif %}
-
-    <form class="mb-4" method="post" action="/batch/upload" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label class="form-label">CSV File</label>
-        <input class="form-control" type="file" name="file" required>
-      </div>
-      <div class="d-flex gap-2 justify-content-end">
-        <button class="btn btn-outline-secondary" type="submit" formaction="/batch/preview_upload">Preview</button>
-        <button class="btn btn-primary" type="submit">Download CSV</button>
-      </div>
-    </form>
-
-    <a href="/" class="btn btn-secondary">« Back</a>
-  </div>
-</div>
+<h4>Batch</h4>
+<form method="post" action="/batch/fetch" class="mb-3">
+  <label class="form-label">CSV URL</label>
+  <input class="form-control" name="csv_url" placeholder="https://.../your.csv">
+  <div class="text-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Preview from URL</button></div>
+</form>
+<form method="post" action="/batch/upload" enctype="multipart/form-data">
+  <label class="form-label">Upload CSV</label>
+  <input type="file" class="form-control" name="file" accept=".csv">
+  <div class="text-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Process upload</button></div>
+</form>
 {% endblock %}
