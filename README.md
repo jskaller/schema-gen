@@ -1,36 +1,22 @@
 # schema-gen
 
-This repository is managed using a *patch drop* workflow:
-I (the assistant) send numbered `.patch` files; you apply them locally
-and push to GitHub.
+This repository uses a simple *patch drop* / small-commit workflow.
 
-## Apply a patch
+## Quickstart (macOS Apple Silicon)
 
-1. Save the patch file into the repo root (e.g. `0001-chore-seed-repo.patch`).
-2. If this is the very first commit in a brand‑new repo, create an empty
-   initial commit so `git am` can run:
+```bash
+xcode-select --install || true
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -U pip
+pip install -e .
+python -m playwright install --with-deps chromium
+uvicorn app.main:app --reload
+# open http://127.0.0.1:8000
+```
 
-   ```bash
-   git commit --allow-empty -m "chore: repo init"
-   ```
+## What’s here
+- FastAPI app with one route and a Jinja/Bootstrap UI
+- Form for single-URL input (processing is a no-op for now)
 
-3. Apply the patch (creates a proper commit with metadata):
-
-   ```bash
-   git am 0001-chore-seed-repo.patch
-   ```
-
-4. If you hit conflicts:
-   - Fix files, `git add -A`
-   - Continue: `git am --continue`
-   - Or abort: `git am --abort`
-
-5. Push to GitHub:
-
-   ```bash
-   git push -u origin HEAD:main
-   ```
-
-## Next
-We’ll iterate with small, focused patches that add code and tests.
-
+We’ll add fetch → extract → generate → score in follow-up patches.

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Schema Gen – Home{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-body">
+    <h5 class="card-title">Generate Schema from a URL</h5>
+    <form method="post" action="/submit" class="mt-3">
+      <div class="mb-3">
+        <label class="form-label">Page URL</label>
+        <input type="url" name="url" class="form-control" placeholder="https://example.org/page" required>
+      </div>
+      <div class="row">
+        <div class="col-md-6 mb-3">
+          <label class="form-label">Topic/Keyword (optional)</label>
+          <input type="text" name="topic" class="form-control" placeholder="oncology, cardiology, ...">
+        </div>
+        <div class="col-md-6 mb-3">
+          <label class="form-label">Subject (optional)</label>
+          <input type="text" name="subject" class="form-control" placeholder="Hospital name, department, etc.">
+        </div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Intended audience (optional)</label>
+        <select class="form-select" name="audience">
+          <option value="">-- Select --</option>
+          <option value="professional">Professional</option>
+          <option value="patient">Patient</option>
+          <option value="student">Student</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" type="submit">Generate</button>
+    </form>
+  </div>
+</div>
+{% endblock %}
