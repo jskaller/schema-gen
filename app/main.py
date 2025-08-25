@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Services / DB
+# --- Services & DB ---
 from app.db import init_db, get_session
 from app.services.settings import get_settings, update_settings
 from app.services.providers import list_ollama_models
@@ -28,12 +28,6 @@ from app.services.normalize import normalize_jsonld
 from app.services.graph import assemble_graph
 from app.services.history import record_run, list_runs, get_run as db_get_run
 
-# Optional geocode (added in (34)); guard import so routes don't break if file missing
-try:
-    from app.services.geocode import geocode_postal_address
-except Exception:
-    geocode_postal_address = None
-
 app = FastAPI(title="Schema Gen", version="1.6.4")
 templates = Jinja2Templates(directory="app/web/templates")
 
@@ -46,6 +40,7 @@ async def __routes():
 @app.on_event("startup")
 async def _startup():
     await init_db()
+    # Print route table to stderr for verification
     paths = []
     for r in app.router.routes:
         method = getattr(r, "methods", {"*"})
@@ -88,16 +83,6 @@ async def _process_single(
 
     inputs = {"topic": topic, "subject": subject, "address": address, "phone": phone, "url": url}
     primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
-
-    # Optional geocode enrich
-    if geocode_postal_address and isinstance(primary_node.get("address"), dict):
-        try:
-            geo = await geocode_postal_address(primary_node["address"])
-            if geo:
-                primary_node["geo"] = {"@type": "GeoCoordinates", **geo}
-        except Exception:
-            pass
-
     final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs) if secondary_types else primary_node
 
     schema_json = load_schema(primary_type)
@@ -107,8 +92,10 @@ async def _process_single(
     root_node = final_jsonld["@graph"][0] if isinstance(final_jsonld, dict) and "@graph" in final_jsonld else final_jsonld
     valid, errors = validate_against_schema(root_node, schema_json)
     overall, details = score_jsonld(root_node, effective_required, effective_recommended)
-    missing_recommended = [k for k in effective_recommended if k not in root_node]
-    tips = [f"Consider adding: {k}"] if missing_recommended else []
+
+    # Advice: list missing recommendeds (simple baseline)
+    missing_recommended = [key for key in effective_recommended if key not in root_node or root_node.get(key) in (None, "", [])]
+    tips = [f"Consider adding: {key}" for key in missing_recommended]
 
     return {
         "url": url, "page_type_label": page_label, "primary_type": primary_type, "secondary_types": secondary_types,
