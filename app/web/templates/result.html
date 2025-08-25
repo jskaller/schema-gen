@@ -20,6 +20,18 @@
         <pre class="p-3 bg-light border rounded" style="white-space: pre-wrap">{{ jsonld | tojson(indent=2) }}</pre>
       </div>
     </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Refine Attempts</h5>
+        <ul class="mb-0">
+          {% for item in iterations %}
+            <li>Attempt {{ item.attempt }} → score {{ item.score }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+
     <div class="card shadow-sm">
       <div class="card-body">
         <h5 class="card-title mb-3">Cleaned Content Preview</h5>
@@ -37,6 +49,7 @@
       </div>
     </div>
   </div>
+
   <div class="col-lg-4">
     <div class="card shadow-sm">
       <div class="card-body">

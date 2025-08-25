@@ -10,11 +10,12 @@ from app.services.ai import get_provider, GenerationInputs
 from app.services.validate import validate_against_schema
 from app.services.score import score_jsonld
 from app.services.signals import extract_signals
+from app.services.refine import refine_to_perfect
 
 from pathlib import Path
 hospital_schema = Path("app/schemas/hospital.schema.json").read_text()
 
-app = FastAPI(title="Schema Gen", version="0.2.0")
+app = FastAPI(title="Schema Gen", version="0.3.0")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.get("/", response_class=HTMLResponse)
@@ -35,6 +36,7 @@ async def submit(
         raw_html = await fetch_url(url)
         cleaned_text = extract_clean_text(raw_html)
         sig = extract_signals(raw_html)
+
         provider = get_provider("dummy")
         payload = GenerationInputs(
             url=url,
@@ -48,10 +50,26 @@ async def submit(
             page_type="Hospital",
         )
         jsonld = provider.generate_jsonld(payload)
+
+        # Validate and score initial
         valid, errors = validate_against_schema(jsonld, hospital_schema)
         required = ["@context", "@type", "name", "url"]
         recommended = ["description", "telephone", "address", "audience", "dateModified", "sameAs", "medicalSpecialty"]
         overall, details = score_jsonld(jsonld, required, recommended)
+
+        # If not perfect, refine iteratively (heuristics; real LLM refine later)
+        final_jsonld, final_score, final_details, iterations = refine_to_perfect(
+            base_jsonld=jsonld,
+            cleaned_text=cleaned_text,
+            required=required,
+            recommended=recommended,
+            score_fn=score_jsonld,
+            max_attempts=3,
+        )
+
+        # Re-validate after refine
+        final_valid, final_errors = validate_against_schema(final_jsonld, hospital_schema)
+
         return templates.TemplateResponse(
             "result.html",
             {
@@ -64,11 +82,12 @@ async def submit(
                 "phone": phone or sig.get("phone"),
                 "excerpt": cleaned_text[:2000],
                 "length": len(cleaned_text),
-                "jsonld": jsonld,
-                "valid": valid,
-                "validation_errors": errors,
-                "overall": overall,
-                "details": details,
+                "jsonld": final_jsonld,
+                "valid": final_valid,
+                "validation_errors": final_errors,
+                "overall": final_score,
+                "details": final_details,
+                "iterations": iterations,
             },
         )
     except Exception as e:
