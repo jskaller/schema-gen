@@ -23,6 +23,10 @@ def normalize_jsonld(obj: Dict[str, Any], primary_type: str, inputs: Dict[str, A
     if not isinstance(dm, str) or not dm.strip():
         obj["dateModified"] = datetime.now(timezone.utc).isoformat()
 
+    # Ensure url field is present (root node should carry canonical URL)
+    if not obj.get("url") and inputs.get("url"):
+        obj["url"] = inputs["url"]
+
     # Audience normalization -> object
     aud = obj.get("audience")
     if isinstance(aud, list):

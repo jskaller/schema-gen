@@ -1,49 +1,130 @@
 
 from __future__ import annotations
-from pathlib import Path
-import json
+from typing import Dict, Any
 
-AVAILABLE_PAGE_TYPES = ["Hospital", "MedicalClinic", "Physician"]
+# Simple, pragmatic JSON Schemas for our primary types.
+# Each schema enforces the @type constant and a minimal required set.
 
-SCHEMA_PATHS = {
-    "Hospital": "app/schemas/hospital.schema.json",
-    "MedicalClinic": "app/schemas/medical_clinic.schema.json",
-    "Physician": "app/schemas/physician.schema.json",
-    "MedicalWebPage": "app/schemas/medical_web_page.schema.json",
+MEDICAL_ORGANIZATION_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@context": {"type": "string"},
+        "@type": {"const": "MedicalOrganization"},
+        "name": {"type": "string"},
+        "url": {"type": "string"},
+        "description": {"type": "string"},
+        "telephone": {"type": ["string", "null"]},
+        "address": {
+            "type": ["object", "null"],
+            "properties": {
+                "@type": {"const": "PostalAddress"},
+                "streetAddress": {"type": ["string", "null"]},
+                "addressLocality": {"type": ["string", "null"]},
+                "addressRegion": {"type": ["string", "null"]},
+                "postalCode": {"type": ["string", "null"]},
+                "addressCountry": {"type": ["string", "null"]}
+            }
+        },
+        "sameAs": {"type": ["array", "null"], "items": {"type": "string"}},
+        "medicalSpecialty": {"type": ["string", "object", "null"]},
+        "audience": {
+            "type": ["object", "null"],
+            "properties": {
+                "@type": {"const": "Audience"},
+                "audienceType": {"type": "string"}
+            }
+        },
+        "dateModified": {"type": "string"}
+    },
+    "required": ["@type", "name", "url"]
 }
 
-DEFAULTS = {
+HOSPITAL_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@context": {"type": "string"},
+        "@type": {"const": "Hospital"},
+        "name": {"type": "string"},
+        "url": {"type": "string"},
+        "telephone": {"type": ["string", "null"]},
+        "address": {"type": ["object", "null"]},
+        "sameAs": {"type": ["array", "null"], "items": {"type": "string"}},
+        "medicalSpecialty": {"type": ["string", "object", "null"]},
+        "dateModified": {"type": "string"}
+    },
+    "required": ["@type", "name", "url"]
+}
+
+MEDICAL_WEBPAGE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@type": {"const": "MedicalWebPage"},
+        "url": {"type": "string"},
+        "name": {"type": ["string", "null"]},
+        "about": {"type": ["string", "null"]}
+    },
+    "required": ["@type", "url"]
+}
+
+PHYSICIAN_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@type": {"const": "Physician"},
+        "name": {"type": "string"},
+        "url": {"type": "string"},
+        "medicalSpecialty": {"type": ["string", "object", "null"]},
+        "telephone": {"type": ["string", "null"]}
+    },
+    "required": ["@type", "name", "url"]
+}
+
+MEDICAL_CLINIC_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@type": {"const": "MedicalClinic"},
+        "name": {"type": "string"},
+        "url": {"type": "string"}
+    },
+    "required": ["@type", "name", "url"]
+}
+
+# Defaults for required / recommended fields by primary type
+_DEFAULTS = {
+    "MedicalOrganization": {
+        "required": ["@type", "name", "url"],
+        "recommended": ["description", "telephone", "address", "medicalSpecialty", "sameAs", "audience", "dateModified"]
+    },
     "Hospital": {
-        "required": ["@context","@type","name","url"],
-        "recommended": ["description","telephone","address","audience","dateModified","sameAs","medicalSpecialty"],
-    },
-    "MedicalClinic": {
-        "required": ["@context","@type","name","url"],
-        "recommended": ["description","telephone","address","openingHours","sameAs"],
-    },
-    "Physician": {
-        "required": ["@context","@type","name","url"],
-        "recommended": ["description","telephone","address","medicalSpecialty","sameAs"],
+        "required": ["@type", "name", "url"],
+        "recommended": ["telephone", "address", "sameAs", "medicalSpecialty", "dateModified"]
     },
     "MedicalWebPage": {
-        "required": ["@context","@type","name","url"],
-        "recommended": ["description","breadcrumb","about","dateModified","primaryImageOfPage"],
+        "required": ["@type", "url"],
+        "recommended": ["name", "about"]
     },
+    "Physician": {
+        "required": ["@type", "name", "url"],
+        "recommended": ["medicalSpecialty", "telephone"]
+    },
+    "MedicalClinic": {
+        "required": ["@type", "name", "url"],
+        "recommended": []
+    }
 }
 
-# Common pickers for UI
-COMMON_PRIMARY_TYPES = [
-    "Hospital","MedicalClinic","Physician","MedicalWebPage","Organization","LocalBusiness","WebPage","Article"
-]
-COMMON_SECONDARY_TYPES = [
-    "BreadcrumbList","Organization","LocalBusiness","Person","ImageObject","PostalAddress","FAQPage","VideoObject","CommunityHealth"
-]
+_SCHEMAS = {
+    "MedicalOrganization": MEDICAL_ORGANIZATION_SCHEMA,
+    "Hospital": HOSPITAL_SCHEMA,
+    "MedicalWebPage": MEDICAL_WEBPAGE_SCHEMA,
+    "Physician": PHYSICIAN_SCHEMA,
+    "MedicalClinic": MEDICAL_CLINIC_SCHEMA,
+}
 
-def load_schema(page_type: str) -> str:
-    path = SCHEMA_PATHS.get(page_type) or SCHEMA_PATHS.get("Hospital")
-    if not path:
-        raise FileNotFoundError(f"No schema path for {page_type}")
-    return Path(path).read_text()
+AVAILABLE_PAGE_TYPES = list(_SCHEMAS.keys())
 
-def defaults_for(page_type: str):
-    return DEFAULTS.get(page_type, DEFAULTS["Hospital"])
+def load_schema(primary_type: str) -> Dict[str, Any]:
+    # Fallback: if unknown, use MedicalOrganization (safer than Hospital for our content)
+    return _SCHEMAS.get(primary_type, MEDICAL_ORGANIZATION_SCHEMA)
+
+def defaults_for(primary_type: str) -> Dict[str, Any]:
+    return _DEFAULTS.get(primary_type, _DEFAULTS["MedicalOrganization"])
