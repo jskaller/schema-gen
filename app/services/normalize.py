@@ -30,7 +30,6 @@ def normalize_jsonld(obj: Dict[str, Any], primary_type: str, inputs: Dict[str, A
     # Audience normalization -> object
     aud = obj.get("audience")
     if isinstance(aud, list):
-        # choose first meaningful
         cand = None
         for it in aud:
             if isinstance(it, dict):
@@ -67,6 +66,10 @@ def normalize_jsonld(obj: Dict[str, Any], primary_type: str, inputs: Dict[str, A
         obj["address"] = addr
     elif inputs.get("address"):
         obj["address"] = {"@type":"PostalAddress","streetAddress": inputs["address"]}
+
+    # Inject geo if provided (lat/long) -> expects dict like {"latitude":..,"longitude":..}
+    if inputs.get("geo") and isinstance(inputs["geo"], dict) and inputs["geo"].get("latitude") and inputs["geo"].get("longitude"):
+        obj["geo"] = {"@type": "GeoCoordinates", "latitude": inputs["geo"]["latitude"], "longitude": inputs["geo"]["longitude"]}
 
     # sameAs -> array
     sameas = obj.get("sameAs")

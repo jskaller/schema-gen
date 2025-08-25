@@ -26,13 +26,13 @@ def _breadcrumb_from_url(url: str) -> Dict[str, Any]:
     }
 
 def assemble_graph(primary: Dict[str, Any], secondary_types: List[str], url: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
-    # Wrap into @graph and add secondary stubs when requested
     ctx = primary.get("@context", "https://schema.org")
     graph: List[Dict[str, Any]] = [primary]
 
     types = [t.strip() for t in (secondary_types or []) if t and t.strip()]
     for t in types:
-        if t.lower() in ("medicalwebpage","webpage"):
+        lt = t.lower()
+        if lt in ("medicalwebpage","webpage"):
             node = {
                 "@type": "MedicalWebPage",
                 "url": url,
@@ -40,23 +40,26 @@ def assemble_graph(primary: Dict[str, Any], secondary_types: List[str], url: str
                 "about": primary.get("name") or inputs.get("topic") or ""
             }
             graph.append(node)
-        elif t.lower() == "hospital":
+        elif lt == "hospital":
             node = {
                 "@type": "Hospital",
                 "name": inputs.get("subject") or primary.get("name") or "",
                 "address": primary.get("address"),
                 "telephone": primary.get("telephone")
             }
+            if inputs.get("geo"):
+                node["geo"] = {"@type":"GeoCoordinates", "latitude": inputs["geo"]["latitude"], "longitude": inputs["geo"]["longitude"]}
+            if url:
+                node["url"] = url
             graph.append(node)
-        elif t.lower() == "medicalspecialty":
-            # Represent as a node for user visibility, even though it's usually an enumeration
-            spec = primary.get("medicalSpecialty") or inputs.get("topic") or "General"
-            node = {"@type": "MedicalSpecialty", "name": spec}
-            graph.append(node)
-        elif t.lower() == "breadcrumblist":
+        elif lt == "medicalspecialty":
+            spec = primary.get("medicalSpecialty") or inputs.get("topic")
+            if spec:
+                node = {"@type": "MedicalSpecialty", "name": spec}
+                graph.append(node)
+        elif lt == "breadcrumblist":
             graph.append(_breadcrumb_from_url(url))
         else:
-            # Generic stub
             graph.append({"@type": t})
 
     return {"@context": ctx, "@graph": graph}
