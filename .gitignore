@@ -1,0 +1,7 @@
+# Common ignores (safe to start with; adjust later)
+node_modules/
+.DS_Store
+.env
+dist/
+coverage/
+.venv/
