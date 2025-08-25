@@ -1,69 +1,74 @@
 
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional, List
 
-def _as_object(v):
-    if isinstance(v, list):
-        return v[0] if v else None
-    return v
+def _first_str(x):
+    if isinstance(x, list) and x:
+        return x[0]
+    if isinstance(x, (str, int, float)):
+        return str(x)
+    return None
 
-def normalize_jsonld(data: Dict[str, Any], *, primary_type: str, fallback_phone: Optional[str]=None, fallback_address: Optional[str]=None) -> Dict[str, Any]:
-    if not isinstance(data, dict):
-        return {"@context":"https://schema.org","@type":primary_type}
+def normalize_jsonld(obj: Dict[str, Any], primary_type: str, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    # Ensure context and type
+    obj = dict(obj or {})
+    obj.setdefault("@context", "https://schema.org")
+    obj["@type"] = primary_type
 
-    # Ensure @context
-    if "@context" not in data:
-        data["@context"] = "https://schema.org"
-
-    # If it's a @graph, try to make the first node also consistent but keep root for export
-    # For now, enforce root node's @type to primary_type
-    t = data.get("@type")
-    if isinstance(t, list):
-        t = t[0] if t else None
-    if not t or (isinstance(t, str) and t.lower() != primary_type.lower()):
-        data["@type"] = primary_type
-
-    # Normalize audience -> object { @type: "Audience", audienceType: "..." }
-    aud = data.get("audience")
-    if aud:
-        aud_obj = _as_object(aud)
-        if isinstance(aud_obj, dict):
-            # ensure @type Audience
-            if "@type" not in aud_obj:
-                aud_obj["@type"] = "Audience"
-            # prefer audienceType over name
-            if "audienceType" not in aud_obj and "name" in aud_obj:
-                aud_obj["audienceType"] = aud_obj.pop("name")
-            data["audience"] = aud_obj
-        elif isinstance(aud_obj, str):
-            data["audience"] = {"@type":"Audience","audienceType": aud_obj}
-        else:
-            # drop invalid shapes
-            data.pop("audience", None)
+    # Audience normalization -> object
+    aud = obj.get("audience")
+    if isinstance(aud, list):
+        # pick first meaningful
+        cand = None
+        for it in aud:
+            if isinstance(it, dict) and (it.get("audienceType") or it.get("name")):
+                cand = it.get("audienceType") or it.get("name")
+                break
+            if isinstance(it, str) and it.strip():
+                cand = it.strip()
+                break
+        if cand:
+            obj["audience"] = {"@type": "Audience", "audienceType": cand}
+    elif isinstance(aud, str):
+        obj["audience"] = {"@type": "Audience", "audienceType": aud}
+    elif isinstance(aud, dict):
+        # rename name -> audienceType if needed
+        if "audienceType" not in aud and "name" in aud:
+            aud["audienceType"] = aud.pop("name")
+        aud.setdefault("@type", "Audience")
+        obj["audience"] = aud
 
     # Telephone
-    if "telephone" in data and isinstance(data["telephone"], list):
-        data["telephone"] = data["telephone"][0]
-    if "telephone" not in data and fallback_phone:
-        data["telephone"] = fallback_phone
+    tel = _first_str(obj.get("telephone"))
+    if tel:
+        obj["telephone"] = tel
+    elif inputs.get("phone"):
+        obj["telephone"] = inputs["phone"]
 
-    # Address normalize
-    addr = data.get("address")
-    if isinstance(addr, str):
-        data["address"] = {"@type":"PostalAddress","streetAddress": addr}
+    # Address
+    addr = obj.get("address")
+    if isinstance(addr, str) and addr.strip():
+        obj["address"] = {"@type":"PostalAddress","streetAddress":addr.strip()}
     elif isinstance(addr, dict):
-        if "@type" not in addr:
-            addr["@type"] = "PostalAddress"
-        data["address"] = addr
-    elif not addr and fallback_address:
-        data["address"] = {"@type":"PostalAddress","streetAddress": fallback_address}
+        addr.setdefault("@type", "PostalAddress")
+        obj["address"] = addr
+    elif inputs.get("address"):
+        obj["address"] = {"@type":"PostalAddress","streetAddress": inputs["address"]}
 
     # sameAs -> array
-    same = data.get("sameAs")
-    if isinstance(same, str):
-        data["sameAs"] = [same]
-    elif isinstance(same, list):
-        # ensure strings only
-        data["sameAs"] = [s for s in same if isinstance(s, str)]
+    sameas = obj.get("sameAs")
+    if isinstance(sameas, str):
+        obj["sameAs"] = [sameas]
+    elif isinstance(sameas, list):
+        obj["sameAs"] = [s for s in sameas if isinstance(s, str) and s.strip()]
 
-    return data
+    # name fallback
+    if not obj.get("name") and inputs.get("subject"):
+        obj["name"] = inputs["subject"]
+
+    # medicalSpecialty from topic if missing
+    if primary_type in ("Hospital","MedicalClinic","Physician","MedicalOrganization"):
+        if not obj.get("medicalSpecialty") and inputs.get("topic"):
+            obj["medicalSpecialty"] = inputs["topic"]
+
+    return obj
