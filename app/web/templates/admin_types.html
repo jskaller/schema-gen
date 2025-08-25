@@ -2,16 +2,16 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Page Types{% endblock %}
 {% block content %}
-<h4>Page Types</h4>
+<h5>Page Types</h5>
 <div class="row g-3">
   <div class="col-lg-6">
     <div class="card">
       <div class="card-body">
-        <h5>Existing</h5>
+        <h6>Existing</h6>
         <table class="table table-sm">
           <thead><tr><th>Label</th><th>Primary</th><th>Secondary</th><th class="text-end">Actions</th></tr></thead>
           <tbody>
-            {% for label, cfg in mapping.items() %}
+          {% for label, cfg in mapping.items() %}
             <tr>
               <td><strong>{{ label }}</strong></td>
               <td>{{ cfg.primary }}</td>
@@ -23,7 +23,7 @@
                 </form>
               </td>
             </tr>
-            {% endfor %}
+          {% endfor %}
           </tbody>
         </table>
       </div>
@@ -32,11 +32,11 @@
   <div class="col-lg-6">
     <div class="card">
       <div class="card-body">
-        <h5>Add / Update</h5>
+        <h6>Add / Update</h6>
         <form method="post" action="/admin/types/upsert">
           <div class="mb-2"><label class="form-label">Label</label><input class="form-control" name="label" required></div>
           <div class="mb-2"><label class="form-label">Primary</label><input class="form-control" name="primary" placeholder="e.g., MedicalOrganization" required></div>
-          <div class="mb-2"><label class="form-label">Secondary (comma-separated)</label><input class="form-control" name="secondary" placeholder="MedicalWebPage, Hospital, MedicalSpecialty, BreadcrumbList"></div>
+          <div class="mb-2"><label class="form-label">Secondary (comma-separated)</label><input class="form-control" name="secondary" placeholder="MedicalWebPage, Hospital, BreadcrumbList"></div>
           <div class="text-end"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
         </form>
       </div>

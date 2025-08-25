@@ -2,15 +2,15 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Batch{% endblock %}
 {% block content %}
-<h4>Batch</h4>
-<form method="post" action="/batch/fetch" class="mb-3">
-  <label class="form-label">CSV URL</label>
-  <input class="form-control" name="csv_url" placeholder="https://.../your.csv">
-  <div class="text-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Preview from URL</button></div>
-</form>
-<form method="post" action="/batch/upload" enctype="multipart/form-data">
+<h5>Batch</h5>
+<form method="post" action="/batch/upload" enctype="multipart/form-data" class="mb-3">
   <label class="form-label">Upload CSV</label>
   <input type="file" class="form-control" name="file" accept=".csv">
   <div class="text-end mt-2"><button class="btn btn-primary btn-sm" type="submit">Process upload</button></div>
+</form>
+<form method="post" action="/batch/fetch">
+  <label class="form-label">CSV URL</label>
+  <input class="form-control" name="csv_url" placeholder="https://.../your.csv">
+  <div class="text-end mt-2"><button class="btn btn-outline-secondary btn-sm" type="submit">Preview from URL</button></div>
 </form>
 {% endblock %}

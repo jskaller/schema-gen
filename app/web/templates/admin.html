@@ -2,12 +2,10 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Admin{% endblock %}
 {% block content %}
-<h4>Admin</h4>
+<h5>Admin</h5>
 {% if ok %}<div class="alert alert-success">Saved.</div>{% endif %}
 {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-<div class="mb-3">
-  <a href="/admin/types" class="btn btn-sm btn-outline-primary">Manage Page Types</a>
-</div>
+<div class="mb-3"><a href="/admin/types" class="btn btn-sm btn-outline-primary">Manage Page Types</a></div>
 <form method="post" action="/admin">
   <div class="row g-3">
     <div class="col-md-4">
@@ -31,13 +29,6 @@
       </select>
     </div>
   </div>
-  <div class="text-end mt-3">
-    <button class="btn btn-primary" type="submit">Save</button>
-  </div>
+  <div class="text-end mt-3"><button class="btn btn-primary" type="submit">Save</button></div>
 </form>
-{% if test_result %}
-<hr>
-<h5>Provider Test Result</h5>
-<pre class="p-3 bg-light border rounded">{{ test_result | tojson(indent=2) }}</pre>
-{% endif %}
 {% endblock %}
