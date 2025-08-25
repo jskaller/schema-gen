@@ -2,15 +2,70 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Home{% endblock %}
 {% block content %}
-<h4>Generate schema (single URL)</h4>
-<form method="post" action="/submit" class="row g-3">
-  <div class="col-12"><input class="form-control" name="url" placeholder="https://example.org" required></div>
-  <div class="col-md-4"><input class="form-control" name="topic" placeholder="topic (optional)"></div>
-  <div class="col-md-4"><input class="form-control" name="subject" placeholder="subject/name (optional)"></div>
-  <div class="col-md-4"><input class="form-control" name="audience" placeholder="audience (optional)"></div>
-  <div class="col-md-6"><input class="form-control" name="address" placeholder="address (optional)"></div>
-  <div class="col-md-6"><input class="form-control" name="phone" placeholder="phone (optional)"></div>
-  <div class="col-md-6"><input class="form-control" name="page_type" placeholder="page type label (optional)"></div>
-  <div class="col-12"><button class="btn btn-primary">Run</button></div>
-</form>
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h4 class="card-title mb-3">Single URL</h4>
+        {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+        {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
+        <form method="post" action="/submit">
+          <div class="mb-3">
+            <label class="form-label">URL</label>
+            <input class="form-control" name="url" placeholder="https://example.org">
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Page Type (label)</label>
+              <input class="form-control" name="page_type" placeholder="e.g., Hospital or Community Outreach">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Topic / Specialty</label>
+              <input class="form-control" name="topic" placeholder="e.g., Cardiology">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Subject / Name</label>
+              <input class="form-control" name="subject" placeholder="Entity name">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Audience</label>
+              <input class="form-control" name="audience" placeholder="e.g., patient">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Address</label>
+              <input class="form-control" name="address" placeholder="123 Main St">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Phone</label>
+              <input class="form-control" name="phone" placeholder="+1-555-555-5555">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Competitor 1</label>
+              <input class="form-control" name="competitor1" placeholder="https://competitor1.example">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Competitor 2</label>
+              <input class="form-control" name="competitor2" placeholder="https://competitor2.example">
+            </div>
+          </div>
+          <div class="mb-3 form-check">
+            <input class="form-check-input" type="checkbox" name="compare_existing" id="cmp">
+            <label class="form-check-label" for="cmp">Compare to on‑page JSON‑LD (if present)</label>
+          </div>
+          <div class="text-end">
+            <button class="btn btn-primary" type="submit">Generate</button>
+            <a class="btn btn-outline-secondary" href="/batch">Batch</a>
+            <a class="btn btn-outline-secondary" href="/admin">Admin</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
