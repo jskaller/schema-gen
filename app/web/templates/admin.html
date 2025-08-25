@@ -3,32 +3,12 @@
 {% block title %}Schema Gen – Admin{% endblock %}
 {% block content %}
 <h5>Admin</h5>
-{% if ok %}<div class="alert alert-success">Saved.</div>{% endif %}
-{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-<div class="mb-3"><a href="/admin/types" class="btn btn-sm btn-outline-primary">Manage Page Types</a></div>
 <form method="post" action="/admin">
   <div class="row g-3">
-    <div class="col-md-4">
-      <label class="form-label">Provider</label>
-      <select class="form-select" name="provider">
-        <option value="dummy" {% if settings.provider == 'dummy' %}selected{% endif %}>Dummy</option>
-        <option value="ollama" {% if settings.provider == 'ollama' %}selected{% endif %}>Ollama</option>
-      </select>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Model (Ollama)</label>
-      <select class="form-select" name="provider_model">
-        <option value="">(default)</option>
-        {% for m in ollama_models %}<option value="{{ m }}" {% if settings.provider_model == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Default Page Type</label>
-      <select class="form-select" name="page_type">
-        {% for p in page_types %}<option value="{{ p }}" {% if settings.page_type == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
-      </select>
-    </div>
+    <div class="col-md-4"><label class="form-label">Provider</label><select class="form-select" name="provider"><option value="dummy">Dummy</option><option value="ollama">Ollama</option></select></div>
+    <div class="col-md-4"><label class="form-label">Model (Ollama)</label><input class="form-control" name="provider_model" placeholder="e.g., llama3"></div>
+    <div class="col-md-4"><label class="form-label">Default Page Type</label><select class="form-select" name="page_type">{% for p in page_types %}<option>{{ p }}</option>{% endfor %}</select></div>
   </div>
-  <div class="text-end mt-3"><button class="btn btn-primary" type="submit">Save</button></div>
+  <div class="text-end mt-3"><button class="btn btn-primary" type="submit">Save</button> <a href="/admin/types" class="btn btn-outline-secondary">Page Types</a></div>
 </form>
 {% endblock %}
