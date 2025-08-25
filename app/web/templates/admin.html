@@ -17,17 +17,15 @@
 
     <form method="post" action="/admin" class="mt-3">
       <div class="row">
-        <div class="col-md-4 mb-3">
+        <div class="col-md-3 mb-3">
           <label class="form-label">Provider</label>
-          <select name="provider" class="form-select" id="providerSelect">
+          <select name="provider" class="form-select">
             <option value="dummy" {% if settings.provider=='dummy' %}selected{% endif %}>Dummy (no API)</option>
             <option value="ollama" {% if settings.provider=='ollama' %}selected{% endif %}>Ollama (local)</option>
           </select>
-          <div class="form-text">Dummy uses heuristics; Ollama calls your local model server at <code>localhost:11434</code>.</div>
         </div>
-
-        <div class="col-md-4 mb-3">
-          <label class="form-label">Model (for Ollama)</label>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Model</label>
           {% if ollama_models and ollama_models|length %}
             <select name="provider_model" class="form-select">
               {% for m in ollama_models %}
@@ -35,32 +33,44 @@
               {% endfor %}
             </select>
           {% else %}
-            <input class="form-control" name="provider_model" value="{{ settings.provider_model or '' }}" placeholder="e.g., llama3, mistral, qwen2:7b">
-            <div class="form-text text-warning">No Ollama models detected. Is Ollama running? <code>ollama serve</code> and <code>ollama list</code>.</div>
+            <input class="form-control" name="provider_model" value="{{ settings.provider_model or '' }}">
           {% endif %}
         </div>
-
-        <div class="col-md-4 mb-3">
-          <label class="form-label">Default Page Type</label>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Page Type</label>
           <select name="page_type" class="form-select">
-            <option value="Hospital" {% if settings.page_type=='Hospital' %}selected{% endif %}>Hospital</option>
+            {% for t in page_types %}
+              <option value="{{ t }}" {% if settings.page_type==t %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
           </select>
         </div>
+        <div class="col-md-3 mb-3">
+          <label class="form-label">Use Defaults?</label>
+          <input type="checkbox" name="use_defaults" value="1">
+        </div>
       </div>
-
       <div class="mb-3">
-        <label class="form-label">Required Fields (JSON list)</label>
+        <label class="form-label">Required Fields</label>
         <textarea class="form-control" name="required_fields" rows="3">{{ settings.required_fields | tojson }}</textarea>
       </div>
       <div class="mb-3">
-        <label class="form-label">Recommended Fields (JSON list)</label>
+        <label class="form-label">Recommended Fields</label>
         <textarea class="form-control" name="recommended_fields" rows="4">{{ settings.recommended_fields | tojson }}</textarea>
       </div>
-
-      <div class="text-end">
+      <div class="d-flex justify-content-between">
         <button class="btn btn-primary" type="submit">Save</button>
+        <form method="post" action="/admin/test">
+          <button class="btn btn-outline-secondary" type="submit">Test Provider</button>
+        </form>
       </div>
     </form>
+
+    {% if test_result %}
+      <div class="alert alert-info mt-3">
+        <strong>Test Result</strong>
+        <pre style="white-space: pre-wrap">{{ test_result | tojson(indent=2) }}</pre>
+      </div>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
