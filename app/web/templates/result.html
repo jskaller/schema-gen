@@ -2,18 +2,53 @@
 {% extends "base.html" %}
 {% block title %}Schema Gen – Result{% endblock %}
 {% block content %}
-<h5>Result</h5>
-<p><strong>Primary:</strong> {{ primary_type }} | <strong>Secondary:</strong> {{ secondary_types|join(", ") }}</p>
-<p><strong>Score:</strong> {{ overall }} | <strong>Valid:</strong> {% if valid %}Yes{% else %}No{% endif %}</p>
-{% if validation_errors and validation_errors|length %}
-<div class="alert alert-warning"><strong>Validation issues:</strong>
-  <ul class="mb-0">{% for e in validation_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+<h4 class="mb-3">Schema Result</h4>
+
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex justify-content-between flex-wrap">
+          <div><strong>Primary:</strong> {{ primary_type }}</div>
+          <div><strong>Secondary:</strong> {{ secondary_types|join(", ") }}</div>
+        </div>
+        <div class="mt-2"><strong>Score:</strong> {{ overall }} | <strong>Valid:</strong> {% if valid %}✅ Yes{% else %}⚠️ No{% endif %}</div>
+        {% if validation_errors and validation_errors|length %}
+          <div class="alert alert-warning mt-3">
+            <strong>Validation issues:</strong>
+            <ul class="mb-0">{% for e in validation_errors %}<li>{{ e }}</li>{% endfor %}</ul>
+          </div>
+        {% endif %}
+        <form class="mt-2" method="post" action="/export/jsonld">
+          <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
+          <input type="hidden" name="url" value='{{ url }}'>
+          <button class="btn btn-primary btn-sm" type="submit">Download JSON-LD</button>
+        </form>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body">
+        <h6 class="mb-2">JSON-LD</h6>
+        <pre class="p-2 bg-light border rounded" style="white-space: pre-wrap; max-height: 60vh; overflow:auto;">{{ jsonld | tojson(indent=2) }}</pre>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h6 class="mb-2">Effective Requirements</h6>
+        <div><strong>Required:</strong> {{ effective_required|tojson }}</div>
+        <div class="mt-1"><strong>Recommended:</strong> {{ effective_recommended|tojson }}</div>
+      </div>
+    </div>
+    {% if advice and advice|length %}
+    <div class="card">
+      <div class="card-body">
+        <h6 class="mb-2">Advice</h6>
+        <ul class="mb-0">{% for tip in advice %}<li>{{ tip }}</li>{% endfor %}</ul>
+      </div>
+    </div>
+    {% endif %}
+  </div>
 </div>
-{% endif %}
-<pre class="p-2 bg-light border rounded" style="white-space: pre-wrap;">{{ jsonld | tojson(indent=2) }}</pre>
-<form class="mt-3" method="post" action="/export/jsonld">
-  <input type="hidden" name="jsonld" value='{{ jsonld | tojson }}'>
-  <input type="hidden" name="url" value='{{ url }}'>
-  <button class="btn btn-primary btn-sm" type="submit">Download JSON-LD</button>
-</form>
 {% endblock %}

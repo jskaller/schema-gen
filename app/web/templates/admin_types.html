@@ -3,20 +3,44 @@
 {% block title %}Schema Gen – Page Types{% endblock %}
 {% block content %}
 <h5>Page Types</h5>
-<div class="row">
+<div class="row g-3">
   <div class="col-lg-6">
-    <table class="table table-sm">
-      <thead><tr><th>Label</th><th>Primary</th><th>Secondary</th></tr></thead>
-      <tbody>{% for label, cfg in mapping.items() %}<tr><td>{{ label }}</td><td>{{ cfg.primary }}</td><td>{{ ', '.join(cfg.secondary) }}</td></tr>{% endfor %}</tbody>
-    </table>
+    <div class="card">
+      <div class="card-body">
+        <h6>Existing</h6>
+        <table class="table table-sm">
+          <thead><tr><th>Label</th><th>Primary</th><th>Secondary</th><th class="text-end">Actions</th></tr></thead>
+          <tbody>
+          {% for label, cfg in mapping.items() %}
+            <tr>
+              <td><strong>{{ label }}</strong></td>
+              <td>{{ cfg.primary }}</td>
+              <td>{{ ', '.join(cfg.secondary) }}</td>
+              <td class="text-end">
+                <form method="post" action="/admin/types/delete" class="d-inline">
+                  <input type="hidden" name="label" value="{{ label }}">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
   <div class="col-lg-6">
-    <form method="post" action="/admin/types/upsert" class="card p-3">
-      <div class="mb-2"><label class="form-label">Label</label><input class="form-control" name="label" required></div>
-      <div class="mb-2"><label class="form-label">Primary</label><input class="form-control" name="primary" required></div>
-      <div class="mb-2"><label class="form-label">Secondary (comma-separated)</label><input class="form-control" name="secondary"></div>
-      <div class="text-end"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
-    </form>
+    <div class="card">
+      <div class="card-body">
+        <h6>Add / Update</h6>
+        <form method="post" action="/admin/types/upsert">
+          <div class="mb-2"><label class="form-label">Label</label><input class="form-control" name="label" required></div>
+          <div class="mb-2"><label class="form-label">Primary</label><input class="form-control" name="primary" placeholder="e.g., MedicalOrganization" required></div>
+          <div class="mb-2"><label class="form-label">Secondary (comma-separated)</label><input class="form-control" name="secondary" placeholder="MedicalWebPage, Hospital, BreadcrumbList"></div>
+          <div class="text-end"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -5,6 +5,15 @@
 <h5>History</h5>
 <table class="table table-sm">
   <thead><tr><th>When</th><th>URL</th><th>Score</th><th>Valid</th></tr></thead>
-  <tbody>{% for r in rows %}<tr><td>{{ r.created_at }}</td><td><a href="/history/{{ r.id }}">{{ r.url }}</a></td><td>{{ r.score_overall }}</td><td>{% if r.valid %}✅{% else %}⚠️{% endif %}</td></tr>{% endfor %}</tbody>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.created_at }}</td>
+      <td><a href="/history/{{ r.id }}">{{ r.url }}</a></td>
+      <td>{{ r.score_overall }}</td>
+      <td>{% if r.valid %}✅{% else %}⚠️{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
 </table>
 {% endblock %}
