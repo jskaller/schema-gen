@@ -30,7 +30,7 @@ from app.services.schemas import load_schema, defaults_for, AVAILABLE_PAGE_TYPES
 from app.services.advice import advise
 from app.services.page_types import get_map, upsert_type, delete_type
 
-app = FastAPI(title="Schema Gen", version="1.4.0")
+app = FastAPI(title="Schema Gen", version="1.5.0")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.on_event("startup")
@@ -68,8 +68,10 @@ async def _process_single(url, topic, subject, audience, address, phone, compare
 
     # Validate & score using schema for the primary type
     schema_json = load_schema(primary_type)
-    required = (s.required_fields or defaults_for(primary_type)["required"])
-    recommended = (s.recommended_fields or defaults_for(primary_type)["recommended"])
+    req_default = defaults_for(primary_type)["required"]
+    rec_default = defaults_for(primary_type)["recommended"]
+    required = (s.required_fields or req_default)
+    recommended = (s.recommended_fields or rec_default)
     valid, errors = validate_against_schema(jsonld, schema_json)
     overall, details = score_jsonld(jsonld, required, recommended)
     tips = advise(jsonld, required, recommended)
@@ -112,34 +114,129 @@ async def _process_single(url, topic, subject, audience, address, phone, compare
         "advice": final_tips,
     }
 
-# --- Admin Types UI ---
+# ---------------- Core pages ----------------
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request, ok: str | None = None, error: str | None = None):
+    return templates.TemplateResponse("index.html", {"request": request, "ok": ok, "error": error})
+
+@app.post("/submit", response_class=HTMLResponse)
+async def submit(
+    request: Request,
+    url: str = Form(""),
+    topic: str | None = Form(None),
+    subject: str | None = Form(None),
+    audience: str | None = Form(None),
+    address: str | None = Form(None),
+    phone: str | None = Form(None),
+    compare_existing: str | None = Form(None),
+    competitor1: str | None = Form(None),
+    competitor2: str | None = Form(None),
+    page_type: str | None = Form(None),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        if not url:
+            return RedirectResponse(url=str(URL("/").include_query_params(error="Please provide a URL")), status_code=303)
+        result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, page_type, session)
+        await record_run(session, result)
+        return templates.TemplateResponse("result.html", {"request": request, **result})
+    except Exception as e:
+        return RedirectResponse(url=str(URL("/").include_query_params(error=str(e))), status_code=303)
+
+# ---------------- Admin / Settings ----------------
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None):
+    s = await get_settings(session)
+    models = await list_ollama_models()
+    return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": ok, "ollama_models": models, "page_types": AVAILABLE_PAGE_TYPES})
+
+@app.post("/admin", response_class=HTMLResponse)
+async def admin_post(
+    request: Request,
+    provider: str = Form("dummy"),
+    provider_model: str = Form(""),
+    page_type: str = Form("Hospital"),
+    required_fields: str = Form(""),
+    recommended_fields: str = Form(""),
+    use_defaults: str = Form(None),
+    page_type_map: str = Form(None),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        if use_defaults:
+            defs = defaults_for(page_type)
+            req, rec = defs["required"], defs["recommended"]
+        else:
+            req = json.loads(required_fields) if required_fields.strip() else None
+            rec = json.loads(recommended_fields) if recommended_fields.strip() else None
+        ptm = None
+        if page_type_map is not None and page_type_map.strip():
+            ptm = json.loads(page_type_map)
+    except Exception as e:
+        s = await get_settings(session)
+        models = await list_ollama_models()
+        return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": None, "error": f"{e}", "ollama_models": models, "page_types": AVAILABLE_PAGE_TYPES})
+    await update_settings(session, provider, page_type, req, rec, provider_model or None, ptm)
+    return RedirectResponse(url="/admin?ok=1", status_code=303)
+
+@app.post("/admin/test", response_class=HTMLResponse)
+async def admin_test(request: Request, session: AsyncSession = Depends(get_session)):
+    s = await get_settings(session)
+    provider = get_provider(s.provider or "dummy", model=s.provider_model or None)
+    sample = GenerationInputs(url="http://example.org", cleaned_text="Example text", page_type=s.page_type)
+    result = await provider.generate_jsonld(sample)
+    models = await list_ollama_models()
+    return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": None, "ollama_models": models, "page_types": AVAILABLE_PAGE_TYPES, "test_result": result})
+
+# Page Types manager
 @app.get("/admin/types", response_class=HTMLResponse)
 async def admin_types(request: Request, session: AsyncSession = Depends(get_session)):
     mapping = await get_map(session)
     return templates.TemplateResponse("admin_types.html", {"request": request, "mapping": mapping})
 
 @app.post("/admin/types/upsert", response_class=HTMLResponse)
-async def admin_types_upsert(
-    request: Request,
-    label: str = Form(...),
-    primary: str = Form(...),
-    secondary: str = Form(""),
-    session: AsyncSession = Depends(get_session),
-):
+async def admin_types_upsert(request: Request, label: str = Form(...), primary: str = Form(...), secondary: str = Form(""), session: AsyncSession = Depends(get_session)):
     secondaries = [s.strip() for s in secondary.split(",") if s.strip()]
     await upsert_type(session, label, primary, secondaries)
     return RedirectResponse(url="/admin/types", status_code=303)
 
 @app.post("/admin/types/delete", response_class=HTMLResponse)
-async def admin_types_delete(
-    request: Request,
-    label: str = Form(...),
-    session: AsyncSession = Depends(get_session),
-):
+async def admin_types_delete(request: Request, label: str = Form(...), session: AsyncSession = Depends(get_session)):
     await delete_type(session, label)
     return RedirectResponse(url="/admin/types", status_code=303)
 
-# --- Batch + Preview updates ---
+# ---------------- History ----------------
+@app.get("/history", response_class=HTMLResponse)
+async def history_list(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
+    rows = await list_runs(session, q=q or None, limit=200)
+    return templates.TemplateResponse("history_list.html", {"request": request, "rows": rows, "q": q})
+
+@app.get("/history/{run_id}", response_class=HTMLResponse)
+async def history_detail(request: Request, run_id: int, session: AsyncSession = Depends(get_session)):
+    run = await db_get_run(session, run_id)
+    if not run:
+        return RedirectResponse(url="/history", status_code=303)
+    return templates.TemplateResponse("history_detail.html", {"request": request, "run": run})
+
+# ---------------- Export (single) ----------------
+@app.post("/export/jsonld")
+async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
+    data = json.loads(jsonld)
+    filename = _safe_filename_from_url(url, "schema", "json")
+    payload = json.dumps(data, indent=2)
+    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+@app.post("/export/csv")
+async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["url", "score", "jsonld"])
+    writer.writerow([url, score, jsonld])
+    out.seek(0)
+    filename = _safe_filename_from_url(url, "schema-single", "csv")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+# ---------------- Batch + Preview ----------------
 def _csv_from_items(items: list[dict]) -> io.StringIO:
     out = io.StringIO()
     writer = csv.writer(out)
@@ -153,6 +250,56 @@ def _csv_from_items(items: list[dict]) -> io.StringIO:
 async def batch_page(request: Request, error: str | None = None, warnings: list[str] | None = None):
     return templates.TemplateResponse("batch.html", {"request": request, "error": error, "warnings": warnings or []})
 
+@app.post("/batch/upload")
+async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
+    text = (await file.read()).decode("utf-8", errors="ignore")
+    rows, warnings = parse_csv(text)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"])
+    writer.writeheader()
+    for row in processed:
+        writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts})
+
+@app.post("/batch/fetch")
+async def batch_fetch(csv_url: str = Form(...), session: AsyncSession = Depends(get_session)):
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            r = await client.get(csv_url)
+            r.raise_for_status()
+            content = r.text
+    except Exception as e:
+        return RedirectResponse(str(URL("/batch").include_query_params(error=str(e))), status_code=303)
+    rows, warnings = parse_csv(content)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"])
+    writer.writeheader()
+    for row in processed:
+        writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts})
+
 @app.post("/batch/preview_upload", response_class=HTMLResponse)
 async def batch_preview_upload(request: Request, file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
     text = (await file.read()).decode("utf-8", errors="ignore")
@@ -162,11 +309,7 @@ async def batch_preview_upload(request: Request, file: UploadFile = File(...), s
     items = []
     for row in rows:
         try:
-            r = await _process_single(
-                row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"),
-                row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"),
-                row.get("page_type") or None, session
-            )
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
             items.append(r)
         except Exception as e:
             items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": "", "advice": []})
@@ -187,11 +330,7 @@ async def batch_preview_fetch(request: Request, csv_url: str = Form(...), sessio
     items = []
     for row in rows:
         try:
-            r = await _process_single(
-                row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"),
-                row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"),
-                row.get("page_type") or None, session
-            )
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
             items.append(r)
         except Exception as e:
             items.append({"url": row.get("url",""), "overall": "", "valid": False, "validation_errors": [str(e)], "jsonld": {}, "comparisons": [], "comparison_notes": [], "excerpt": "", "advice": []})
