@@ -9,7 +9,7 @@
         <h4 class="card-title mb-3">Generate Schema for a Page</h4>
         {% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
         {% if ok %}<div class="alert alert-success">{{ ok }}</div>{% endif %}
-        <form method="post" action="/submit">
+        <form id="mainForm" method="post" action="/submit">
           <div class="mb-3">
             <label class="form-label">URL</label>
             <input class="form-control" name="url" placeholder="https://example.org" required>
@@ -53,8 +53,9 @@
             </div>
           </div>
 
-          <div class="text-end">
+          <div class="text-end d-flex gap-2 justify-content-end">
             <button class="btn btn-primary" type="submit">Generate</button>
+            <button id="asyncBtn" class="btn btn-success" type="button">Generate (show progress)</button>
             <a class="btn btn-outline-secondary" href="/batch">Batch</a>
             <a class="btn btn-outline-secondary" href="/admin">Admin</a>
           </div>
@@ -63,4 +64,13 @@
     </div>
   </div>
 </div>
+<script>
+document.getElementById("asyncBtn").onclick = async () => {
+  const form = document.getElementById("mainForm");
+  const data = new FormData(form);
+  const res = await fetch("/submit_async", {method:"POST", body:data});
+  const job = await res.json();
+  window.location = "/progress/" + job.job_id;
+}
+</script>
 {% endblock %}

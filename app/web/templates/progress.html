@@ -1,0 +1,28 @@
+
+{% extends "base.html" %}
+{% block title %}Schema Gen – Progress{% endblock %}
+{% block content %}
+<h4>Processing...</h4>
+<div class="progress mb-3">
+  <div id="bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%">0%</div>
+</div>
+<ul id="log" class="list-unstyled small bg-light p-2 border rounded" style="max-height:50vh; overflow:auto;"></ul>
+<script>
+const evt = new EventSource("/events/{{ job_id }}");
+const bar = document.getElementById("bar");
+const log = document.getElementById("log");
+evt.onmessage = function(e) {
+  const data = JSON.parse(e.data);
+  bar.style.width = data.progress + "%";
+  bar.innerText = data.progress + "%";
+  const li = document.createElement("li");
+  li.innerText = data.msg;
+  log.appendChild(li);
+  log.scrollTop = log.scrollHeight;
+  if (data.progress >= 100) {
+    evt.close();
+    setTimeout(()=>{ window.location = "/result/{{ job_id }}"; }, 800);
+  }
+}
+</script>
+{% endblock %}
