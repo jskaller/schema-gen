@@ -1,5 +1,6 @@
 
 from typing import Any, Dict, List, Optional
+import re
 
 def _ensure_graph(data: Any) -> List[Dict]:
     graph: List[Dict] = []
@@ -14,11 +15,10 @@ def _ensure_graph(data: Any) -> List[Dict]:
         graph = [n for n in data if isinstance(n, dict)]
     return graph
 
-def _flatten_embedded_graphs(graph: List[Dict]) -> List[Dict]:
+def _flatten_embedded_graphs(graph: List[Dict]):
     out: List[Dict] = []
     for node in graph:
-        if not isinstance(node, dict):
-            continue
+        if not isinstance(node, dict): continue
         n = dict(node)
         if "@graph" in n and isinstance(n["@graph"], list):
             for sub in n["@graph"]:
@@ -31,10 +31,8 @@ def _flatten_embedded_graphs(graph: List[Dict]) -> List[Dict]:
 def _drop_nulls_and_empty(n: Dict) -> Dict:
     clean = {}
     for k, v in n.items():
-        if v is None:
-            continue
-        if isinstance(v, (list, dict)) and not v:
-            continue
+        if v is None: continue
+        if isinstance(v, (list, dict)) and not v: continue
         clean[k] = v
     return clean
 
@@ -45,26 +43,44 @@ def _coerce_audience(n: Dict) -> None:
     elif isinstance(val, list) and val and isinstance(val[0], str):
         n["audience"] = {"@type": "Audience", "audienceType": val[0]}
 
+def _parse_address_str(addr: str) -> Optional[Dict[str, str]]:
+    s = " ".join((addr or "").split())
+    if not s: return None
+    # simple heuristic: "..., City, ST 12345"
+    m = re.search(r"(?P<street>.+?),\s*(?P<city>[A-Za-z .'-]+),\s*(?P<region>[A-Z]{2})\s*(?P<zip>\d{5}(?:-\d{4})?)?", s)
+    if not m:
+        return None
+    out = {
+        "@type": "PostalAddress",
+        "streetAddress": m.group("street").strip(),
+        "addressLocality": m.group("city").strip(),
+        "addressRegion": m.group("region").strip(),
+    }
+    if m.group("zip"):
+        out["postalCode"] = m.group("zip")
+    return out
+
+def _coerce_address(n: Dict) -> None:
+    addr = n.get("address")
+    if isinstance(addr, str):
+        parsed = _parse_address_str(addr)
+        if parsed:
+            n["address"] = parsed
+        else:
+            # un-parseable junk — drop it so we don't fail validation
+            n.pop("address", None)
+
 def _fill_from_hints(n: Dict, hints: Dict[str, Any]) -> None:
-    # Only fill if missing
-    if "url" not in n and hints.get("url"):
-        n["url"] = hints["url"]
-    if "name" not in n and hints.get("name"):
-        n["name"] = hints["name"]
-    if "telephone" not in n and hints.get("telephone"):
-        n["telephone"] = hints["telephone"]
-    if "address" not in n and hints.get("address"):
-        n["address"] = hints["address"]
-    if "audience" not in n and hints.get("audience"):
-        n["audience"] = {"@type": "Audience", "audienceType": hints["audience"]}
-    if "dateModified" not in n and hints.get("dateModified"):
-        n["dateModified"] = hints["dateModified"]
-    if "sameAs" not in n and hints.get("sameAs"):
-        n["sameAs"] = hints["sameAs"]
-    if "medicalSpecialty" not in n and hints.get("medicalSpecialty"):
-        n["medicalSpecialty"] = hints["medicalSpecialty"]
-    if "description" not in n and hints.get("description"):
-        n["description"] = hints["description"]
+    if "url" not in n and hints.get("url"): n["url"] = hints["url"]
+    if "name" not in n and hints.get("name"): n["name"] = hints["name"]
+    if "telephone" not in n and hints.get("telephone"): n["telephone"] = hints["telephone"]
+    if "address" not in n and hints.get("address"): n["address"] = hints["address"]
+    if "audience" not in n and hints.get("audience"): n["audience"] = {"@type": "Audience", "audienceType": hints["audience"]}
+    if "dateModified" not in n and hints.get("dateModified"): n["dateModified"] = hints["dateModified"]
+    if "sameAs" not in n and hints.get("sameAs"): n["sameAs"] = hints["sameAs"]
+    if "medicalSpecialty" not in n and hints.get("medicalSpecialty"): n["medicalSpecialty"] = hints["medicalSpecialty"]
+    if "description" not in n and hints.get("description"): n["description"] = hints["description"]
+    _coerce_address(n)
 
 def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_types: Optional[List[str]] = None, hints: Optional[Dict[str, Any]] = None) -> Dict:
     hints = hints or {}
@@ -75,48 +91,41 @@ def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_
     for n in graph:
         n = _drop_nulls_and_empty(n)
         _coerce_audience(n)
+        _coerce_address(n)
         cleaned.append(n)
 
-    # Ensure root of primary type
+    # Ensure root primary
     root_idx = None
     for i, n in enumerate(cleaned):
         if n.get("@type") == primary_type:
-            root_idx = i
-            break
+            root_idx = i; break
     if root_idx is None:
         if cleaned and (("@type" not in cleaned[0]) or cleaned[0].get("@type") in ("Thing","WebPage","MedicalWebPage")):
-            cleaned[0]["@type"] = primary_type
-            root_idx = 0
+            cleaned[0]["@type"] = primary_type; root_idx = 0
         if root_idx is None:
             root = {"@context": "https://schema.org", "@type": primary_type}
             if url: root["url"] = url
             _fill_from_hints(root, hints)
-            cleaned.insert(0, root)
-            root_idx = 0
-    # Backfill root from hints
+            cleaned.insert(0, root); root_idx = 0
+
     _fill_from_hints(cleaned[root_idx], hints)
 
-    # Ensure MedicalOrganization secondary presence + fill
-    sec = set(secondary_types or [])
-    if "MedicalOrganization" in sec:
+    # Ensure MedicalOrganization node
+    if "MedicalOrganization" in set(secondary_types or []):
         mo = next((n for n in cleaned if n.get("@type") == "MedicalOrganization"), None)
         if not mo:
             mo = {"@type": "MedicalOrganization"}
             cleaned.append(mo)
         _fill_from_hints(mo, hints)
 
-    # Ensure MedicalWebPage has url/name/about
+    # Ensure MedicalWebPage basics
     if "MedicalWebPage" in set(secondary_types or []):
         mwp = next((n for n in cleaned if n.get("@type") == "MedicalWebPage"), None)
         if not mwp:
             mwp = {"@type": "MedicalWebPage"}
             cleaned.append(mwp)
-        if "url" not in mwp and url:
-            mwp["url"] = url
-        if "name" not in mwp and hints.get("name"):
-            mwp["name"] = hints["name"]
-        if "about" not in mwp and hints.get("name"):
-            mwp["about"] = hints["name"]
+        if "url" not in mwp and url: mwp["url"] = url
+        if "name" not in mwp and hints.get("name"): mwp["name"] = hints["name"]
+        if "about" not in mwp and hints.get("name"): mwp["about"] = hints["name"]
 
-    # Guarantee top-level wrapper with @context
     return {"@context": "https://schema.org", "@graph": cleaned}
