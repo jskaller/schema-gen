@@ -26,8 +26,9 @@ from app.services.normalize import normalize_jsonld
 from app.services.graph import assemble_graph
 from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.progress import create_job, update_job, finish_job, get_job
+from app.services.enhance import enhance_jsonld
 
-app = FastAPI(title="Schema Gen", version="1.6.6")
+app = FastAPI(title="Schema Gen", version="1.7.0")
 templates = Jinja2Templates(directory="app/web/templates")
 
 # Diagnostics
@@ -72,7 +73,12 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
 
     inputs = {"topic": topic, "subject": subject, "address": address, "phone": phone, "url": url}
     primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
+
+    # Assemble secondary nodes if configured
     final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs) if secondary_types else primary_node
+
+    # --- Enhancement layer: breadcrumbs / socials / phones / specialty normalization ---
+    final_jsonld = enhance_jsonld(final_jsonld, secondary_types, raw_html, url, topic, subject)
 
     schema_json = load_schema(primary_type)
     effective_required = (s.required_fields or defaults_for(primary_type)["required"])
@@ -128,7 +134,7 @@ async def submit_async(request: Request,
     await create_job(job_id)
 
     async def runner():
-        steps = [("Fetching URL",10),("Extracting text",25),("Scanning signals",35),("Generating JSON-LD",55),("Normalizing",70),("Assembling graph",80),("Validating",90),("Scoring & advice",95)]
+        steps = [("Fetching URL",10),("Extracting text",25),("Scanning signals",35),("Generating JSON-LD",55),("Normalizing",70),("Assembling graph",80),("Enhancing",85),("Validating",90),("Scoring & advice",95)]
         try:
             for msg, pct in steps:
                 await update_job(job_id, pct, msg)
@@ -299,3 +305,4 @@ async def batch_export_from_preview(rows_json: str = Form(...)):
     items = json.loads(rows_json); out = _csv_from_items(items)
     filename = f"schema-batch-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
