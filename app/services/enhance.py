@@ -1,4 +1,4 @@
-# enhance.py hardened (v40m) — adds import-time banner for confirmation
+# enhance.py hardened (v40m)
 print("[enhance v40m] loaded", flush=True)
 
 import re

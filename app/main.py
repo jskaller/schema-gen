@@ -27,7 +27,7 @@ from app.services.graph import assemble_graph
 from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.progress import create_job, update_job, finish_job, get_job
 from app.services.enhance import enhance_jsonld
-from app.services.sanitize import sanitize_jsonld
+from app.services.sanitize import sanitize_jsonld  # UPDATED signature
 
 app = FastAPI(title="Schema Gen", version="1.8.3")
 templates = Jinja2Templates(directory="app/web/templates")
@@ -44,7 +44,9 @@ async def __routes():
 @app.on_event("startup")
 async def _startup():
     await init_db()
-    print("[ROUTES at startup]\n" + "\n".join(sorted(f"{','.join(sorted(getattr(r,'methods',{'*'})))} {getattr(r,'path','?')}" for r in app.router.routes)), file=sys.stderr)
+    print("[startup] routes:", file=sys.stderr)
+    for r in sorted(app.router.routes, key=lambda x: getattr(x, "path", "")):
+        print(f"  {sorted(list(getattr(r,'methods',{'*'})))} {getattr(r,'path','?')}", file=sys.stderr)
 
 def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
     host = urlparse(url or '').netloc.replace(":", "_") or "schema"
@@ -59,6 +61,20 @@ async def resolve_types(session: AsyncSession, label: str | None):
     primary = cfg.get("primary") or effective_label
     secondary = cfg.get("secondary") or []
     return effective_label, primary, secondary, s
+
+def _desc_from_text(txt: str, fallback: str = "") -> str:
+    t = (txt or "").strip()
+    if not t:
+        return fallback
+    # crude: shorten to ~280 chars at sentence/word boundary
+    t = " ".join(t.split())
+    if len(t) <= 280:
+        return t
+    # try stop at period
+    p = t.find(". ", 180, 280)
+    if p != -1:
+        return t[:p+1]
+    return t[:280]
 
 async def _process_single(url: str, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, label, session: AsyncSession):
     print(f"[_process_single] start url={url}", file=sys.stderr)
@@ -121,17 +137,42 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         print(f"[_process_single] assemble_graph failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         final_jsonld = primary_node
 
-    # Enrich (safe) then Sanitize (flatten/make root/ensure secondaries)
     try:
         final_jsonld = enhance_jsonld(final_jsonld, secondary_types or [], raw_html, url or "", topic or "", subject or "")
         print("[_process_single] enhance_jsonld ok", file=sys.stderr)
     except Exception as e:
-        print(f"[_process_single] enhance_jsonld failed (non-fatal): {e}\n{traceback.format_exc()}", file=sys.stderr)
+        print(f"[_process_single] enhance_jsonld failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
+
+    # Build hints/backfill from signals + inputs
+    hints = {
+        "url": url or "",
+        "name": (subject or "").strip() or sig.get("org") or "",
+        "telephone": (phone or "").strip() or sig.get("phone") or "",
+        "address": address or sig.get("address"),
+        "audience": (audience or "").strip() or "Patient",
+        "sameAs": sig.get("sameAs") or [],
+        "medicalSpecialty": (topic or "").strip(),
+        "dateModified": datetime.utcnow().isoformat() + "Z",
+        "description": _desc_from_text(cleaned_text, ""),
+    }
+
+    # Sanitize + backfill BEFORE validate/score
     try:
-        final_jsonld = sanitize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [])
+        final_jsonld = sanitize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [], hints)
         print("[_process_single] sanitize_jsonld ok", file=sys.stderr)
     except Exception as e:
-        print(f"[_process_single] sanitize_jsonld failed (non-fatal): {e}\n{traceback.format_exc()}", file=sys.stderr)
+        print(f"[_process_single] sanitize_jsonld failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
+
+    # Choose root for validation
+    root_node = None
+    if isinstance(final_jsonld, dict) and "@graph" in final_jsonld and isinstance(final_jsonld["@graph"], list) and final_jsonld["@graph"]:
+        for n in final_jsonld["@graph"]:
+            if isinstance(n, dict) and n.get("@type") == primary_type:
+                root_node = n
+                break
+        root_node = root_node or final_jsonld["@graph"][0]
+    elif isinstance(final_jsonld, dict):
+        root_node = final_jsonld
 
     try:
         schema_json = load_schema(primary_type)
@@ -143,19 +184,15 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
     effective_required = (getattr(s, "required_fields", None) or defs["required"])
     effective_recommended = (getattr(s, "recommended_fields", None) or defs["recommended"])
 
-    root_node = final_jsonld["@graph"][0] if isinstance(final_jsonld, dict) and "@graph" in final_jsonld and isinstance(final_jsonld["@graph"], list) and final_jsonld["@graph"] else final_jsonld
-    if root_node is None:
-        root_node = {"@context": "https://schema.org", "@type": primary_type or "Thing", "url": url or ""}
-
     try:
-        valid, errors = validate_against_schema(root_node, schema_json)
+        valid, errors = validate_against_schema(root_node or {}, schema_json)
         print(f"[_process_single] validate ok valid={valid}", file=sys.stderr)
     except Exception as e:
         print(f"[_process_single] validate failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         valid, errors = False, [f"Validation failed: {e}"]
 
     try:
-        overall, details = score_jsonld(root_node, effective_required, effective_recommended)
+        overall, details = score_jsonld(root_node or {}, effective_required, effective_recommended)
         print(f"[_process_single] score ok overall={overall}", file=sys.stderr)
     except Exception as e:
         print(f"[_process_single] score failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
@@ -191,6 +228,8 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
     print(f"[_process_single] done url={url}", file=sys.stderr)
     return result
 
+# --- routes remain identical to v1.8.2 (omitted for brevity); see previous bundle ---
+
 # ---------- Public ----------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None, session: AsyncSession = Depends(get_session)):
@@ -224,7 +263,7 @@ async def submit_async(request: Request,
     async def runner():
         try:
             await update_job(job_id, 5, "Starting"); print("[runner] 5% Starting", file=sys.stderr)
-            steps = [("Fetching URL",15),("Extracting text",30),("Scanning signals",40),("Generating JSON-LD",60),("Normalizing",75),("Assembling graph",85),("Enhancing",92),("Validating/Scoring",96)]
+            steps = [("Fetching URL",15),("Extracting text",30),("Scanning signals",40),("Generating JSON-LD",60),("Normalizing",75),("Assembling graph",85),("Enhancing",92),("Sanitizing",94),("Validating/Scoring",96)]
             for msg, pct in steps:
                 await update_job(job_id, pct, msg); print(f"[runner] {pct}% {msg}", file=sys.stderr)
                 await asyncio.sleep(0.05)
