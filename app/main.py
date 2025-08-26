@@ -28,7 +28,7 @@ from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.progress import create_job, update_job, finish_job, get_job
 from app.services.enhance import enhance_jsonld
 
-app = FastAPI(title="Schema Gen", version="1.7.9")
+app = FastAPI(title="Schema Gen", version="1.8.0")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.get("/favicon.ico")
@@ -60,22 +60,31 @@ async def resolve_types(session: AsyncSession, label: str | None):
     return effective_label, primary, secondary, s
 
 async def _process_single(url: str, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, label, session: AsyncSession):
+    print(f"[_process_single] start url={url}", file=sys.stderr)
     try:
         raw_html = await fetch_url(url)
-    except Exception:
+        print("[_process_single] fetched html", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] fetch_url failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         raw_html = ""
     raw_html = raw_html or ""
     try:
         cleaned_text = extract_clean_text(raw_html) or ""
-    except Exception:
+        print(f"[_process_single] extracted text len={len(cleaned_text)}", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] extract_clean_text failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         cleaned_text = ""
     try:
         sig = extract_signals(raw_html) or {}
-    except Exception:
+        print(f"[_process_single] signals keys={list(sig.keys())}", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] extract_signals failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         sig = {}
 
     page_label, primary_type, secondary_types, s = await resolve_types(session, label)
+    print(f"[_process_single] page_label={page_label} primary={primary_type} secondary={secondary_types}", file=sys.stderr)
     provider = get_provider(s.provider or "dummy", model=(s.provider_model or None))
+    print(f"[_process_single] provider={s.provider} model={s.provider_model}", file=sys.stderr)
 
     payload = GenerationInputs(
         url=url or "",
@@ -91,28 +100,36 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
 
     try:
         base_jsonld = await provider.generate_jsonld(payload) or {}
+        print("[_process_single] provider.generate_jsonld ok", file=sys.stderr)
     except Exception as e:
+        print(f"[_process_single] provider.generate_jsonld failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         base_jsonld = {}
 
     inputs = {"topic": topic or "", "subject": subject or "", "address": address or "", "phone": phone or "", "url": url or ""}
     try:
         primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
-    except Exception:
+        print("[_process_single] normalize_jsonld ok", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] normalize_jsonld failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         primary_node = {"@context": "https://schema.org", "@type": primary_type, "url": url or ""}
 
     try:
         final_jsonld = assemble_graph(primary_node, secondary_types or [], url or "", inputs) if secondary_types else primary_node
-    except Exception:
+        print("[_process_single] assemble_graph ok", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] assemble_graph failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         final_jsonld = primary_node
 
     try:
         final_jsonld = enhance_jsonld(final_jsonld, secondary_types or [], raw_html, url or "", topic or "", subject or "")
-    except Exception:
-        pass
+        print("[_process_single] enhance_jsonld ok", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] enhance_jsonld failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
 
     try:
         schema_json = load_schema(primary_type)
-    except Exception:
+    except Exception as e:
+        print(f"[_process_single] load_schema failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         schema_json = {}
 
     defs = defaults_for(primary_type) if primary_type else {"required": [], "recommended": []}
@@ -125,18 +142,22 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
 
     try:
         valid, errors = validate_against_schema(root_node, schema_json)
+        print(f"[_process_single] validate ok valid={valid}", file=sys.stderr)
     except Exception as e:
+        print(f"[_process_single] validate failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         valid, errors = False, [f"Validation failed: {e}"]
 
     try:
         overall, details = score_jsonld(root_node, effective_required, effective_recommended)
-    except Exception:
+        print(f"[_process_single] score ok overall={overall}", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] score failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         overall, details = 0, {"subscores": {}, "notes": []}
 
     missing_recommended = [key for key in (effective_recommended or []) if key not in (root_node or {}) or (root_node or {}).get(key) in (None, "", [])]
     tips = [f"Consider adding: {key}" for key in missing_recommended]
 
-    return {
+    result = {
         "url": url or "",
         "page_type_label": page_label,
         "primary_type": primary_type,
@@ -160,6 +181,8 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         "effective_required": effective_required or [],
         "effective_recommended": effective_recommended or [],
     }
+    print(f"[_process_single] done url={url}", file=sys.stderr)
+    return result
 
 # ---------- Public ----------
 @app.get("/", response_class=HTMLResponse)
@@ -189,21 +212,28 @@ async def submit_async(request: Request,
     session: AsyncSession = Depends(get_session)):
     job_id = str(uuid.uuid4())
     await create_job(job_id)
+    print(f"[runner] created job {job_id} url={url}", file=sys.stderr)
 
     async def runner():
         try:
-            await update_job(job_id, 5, "Starting")
+            await update_job(job_id, 5, "Starting"); print("[runner] 5% Starting", file=sys.stderr)
             steps = [("Fetching URL",15),("Extracting text",30),("Scanning signals",40),("Generating JSON-LD",60),("Normalizing",75),("Assembling graph",85),("Enhancing",92),("Validating/Scoring",96)]
             for msg, pct in steps:
-                await update_job(job_id, pct, msg)
+                await update_job(job_id, pct, msg); print(f"[runner] {pct}% {msg}", file=sys.stderr)
                 await asyncio.sleep(0.05)
             result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, page_type, session)
-            await finish_job(job_id, result)
+            await finish_job(job_id, result); print("[runner] finished", file=sys.stderr)
         except Exception as e:
             tb = traceback.format_exc()
-            await update_job(job_id, 100, f"Error: {e}")
-            # also store an error result so /result can render something
-            await finish_job(job_id, {"url": url, "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
+            print(f"[runner failed] {e}\n{tb}", file=sys.stderr)
+            try:
+                await update_job(job_id, 100, f"Error: {e}")
+                await finish_job(job_id, {"url": url, "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
+            except Exception as e2:
+                print(f"[runner failed: could not record error] {e2}", file=sys.stderr)
+        finally:
+            print("[runner] exit", file=sys.stderr)
+
     asyncio.create_task(runner())
     return {"job_id": job_id}
 
@@ -212,11 +242,15 @@ async def events(job_id: str):
     async def gen():
         while True:
             job = await get_job(job_id)
-            if not job: break
+            if not job:
+                print(f"[events] job {job_id} gone", file=sys.stderr)
+                break
             progress = job.get("progress", 0)
             msg = job.get("messages", [{"msg": "Starting..."}])[-1]["msg"]
-            yield f"data: {json.dumps({'progress': progress, 'msg': msg})}\\n\\n"
-            if progress >= 100 or job.get("result"): break
+            yield f"data: {json.dumps({'progress': progress, 'msg': msg})}\n\n"
+            if progress >= 100 or job.get("result"):
+                print(f"[events] job {job_id} done", file=sys.stderr)
+                break
             await asyncio.sleep(0.5)
     return StreamingResponse(gen(), media_type="text/event-stream")
 
