@@ -29,7 +29,7 @@ from app.services.progress import create_job, update_job, finish_job, get_job
 from app.services.enhance import enhance_jsonld
 from app.services.sanitize import sanitize_jsonld
 
-app = FastAPI(title="Schema Gen", version="1.8.5")
+app = FastAPI(title="Schema Gen", version="1.8.6")
 templates = Jinja2Templates(directory="app/web/templates")
 
 HEARTBEAT_INTERVAL = 0.5
@@ -47,7 +47,7 @@ async def __routes():
 @app.on_event("startup")
 async def _startup():
     await init_db()
-    print("[startup] app v1.8.5", file=sys.stderr)
+    print("[startup] app v1.8.6", file=sys.stderr)
 
 def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
     host = urlparse(url or '').netloc.replace(":", "_") or "schema"
@@ -78,6 +78,7 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
     async def hb(pct, msg):
         if job_id:
             await update_job(job_id, pct, msg)
+        # server log heartbeat
         print(f"[job {job_id or '-'}] {pct}% {msg}", file=sys.stderr)
 
     await hb(5, "Fetching URL")
@@ -183,9 +184,9 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         schema_json = {}
 
     defs = defaults_for(primary_type) if primary_type else {"required": [], "recommended": []}
-    s = await get_settings(session)
-    effective_required = (getattr(s, "required_fields", None) or defs["required"])
-    effective_recommended = (getattr(s, "recommended_fields", None) or defs["recommended"])
+    s2 = await get_settings(session)
+    effective_required = (getattr(s2, "required_fields", None) or defs["required"])
+    effective_recommended = (getattr(s2, "recommended_fields", None) or defs["recommended"])
 
     await hb(95, "Validating & scoring")
     try:
@@ -227,7 +228,7 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         "effective_recommended": effective_recommended or [],
     }
 
-# ---------- Routes ----------
+# ---------- Routes (ALL) ----------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None, session: AsyncSession = Depends(get_session)):
     mapping = await get_map(session)
@@ -299,7 +300,7 @@ async def progress_page(request: Request, job_id: str):
 
 @app.get("/result/{job_id}", response_class=HTMLResponse)
 async def result_page(request: Request, job_id: str, session: AsyncSession = Depends(get_session)):
-    # block briefly to allow jobs that just finished to be visible
+    # brief wait to avoid race
     waited = 0.0
     while waited < 1.5:
         job = await get_job(job_id)
@@ -319,5 +320,122 @@ async def result_page(request: Request, job_id: str, session: AsyncSession = Dep
         pass
     return templates.TemplateResponse("result.html", {"request": request, **result})
 
-# Admin, History, Export, Batch endpoints are unchanged from earlier bundle and should already exist in your tree.
-# This file only replaces app/main.py to prevent stalling and add heartbeats/timeouts.
+# ---------- Admin ----------
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None, error: str | None = None):
+    s = await get_settings(session)
+    models = await list_ollama_models()
+    mapping = await get_map(session)
+    return templates.TemplateResponse("admin.html", {"request": request, "settings": s, "ok": ok, "error": error, "ollama_models": models, "page_types": AVAILABLE_PAGE_TYPES, "mapping": mapping})
+
+@app.post("/admin", response_class=HTMLResponse)
+async def admin_post(request: Request,
+    provider: str = Form("dummy"), provider_model: str = Form(""),
+    page_type: str = Form("Hospital"), required_fields: str = Form(""), recommended_fields: str = Form(""),
+    use_defaults: str = Form(None), page_type_map: str = Form(None),
+    session: AsyncSession = Depends(get_session)):
+    try:
+        if use_defaults:
+            defs = defaults_for(page_type); req, rec = defs["required"], defs["recommended"]
+        else:
+            req = json.loads(required_fields) if (required_fields or "").strip() else None
+            rec = json.loads(recommended_fields) if (recommended_fields or "").strip() else None
+        ptm = json.loads(page_type_map) if page_type_map else None
+    except Exception as e:
+        return await admin_get(request, session, error=str(e))
+    await update_settings(session, provider, page_type, req, rec, provider_model or None, ptm)
+    return RedirectResponse(url="/admin?ok=1", status_code=303)
+
+@app.get("/admin/types", response_class=HTMLResponse)
+async def admin_types(request: Request, session: AsyncSession = Depends(get_session)):
+    mapping = await get_map(session)
+    return templates.TemplateResponse("admin_types.html", {"request": request, "mapping": mapping})
+
+@app.post("/admin/types/upsert", response_class=HTMLResponse)
+async def admin_types_upsert(request: Request, label: str = Form(...), primary: str = Form(...), secondary: str = Form(""), session: AsyncSession = Depends(get_session)):
+    secondaries = [s.strip() for s in (secondary or "").split(",") if s.strip()]
+    await upsert_type(session, label, primary, secondaries)
+    return RedirectResponse(url="/admin/types", status_code=303)
+
+@app.post("/admin/types/delete", response_class=HTMLResponse)
+async def admin_types_delete(request: Request, label: str = Form(...), session: AsyncSession = Depends(get_session)):
+    await delete_type(session, label)
+    return RedirectResponse(url="/admin/types", status_code=303)
+
+# ---------- History ----------
+@app.get("/history", response_class=HTMLResponse)
+async def history_list_page(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
+    rows = await list_runs(session, q=q or None, limit=200)
+    return templates.TemplateResponse("history_list.html", {"request": request, "rows": rows, "q": q})
+
+@app.get("/history/{run_id}", response_class=HTMLResponse)
+async def history_detail(request: Request, run_id: int, session: AsyncSession = Depends(get_session)):
+    run = await db_get_run(session, run_id)
+    if not run:
+        return RedirectResponse(url="/history", status_code=303)
+    return templates.TemplateResponse("history_detail.html", {"request": request, "run": run})
+
+# ---------- Export ----------
+@app.post("/export/jsonld")
+async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
+    try:
+        data = json.loads(jsonld)
+        payload = json.dumps(data, indent=2)
+    except Exception:
+        payload = jsonld
+    filename = _safe_filename_from_url(url, "schema", "json")
+    return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+@app.post("/export/csv")
+async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
+    out = io.StringIO()
+    writer = csv.writer(out); writer.writerow(["url", "score", "jsonld"]); writer.writerow([url, score, jsonld])
+    out.seek(0); filename = _safe_filename_from_url(url, "schema-single", "csv")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+# ---------- Batch ----------
+@app.get("/batch", response_class=HTMLResponse)
+async def batch_page(request: Request, error: str | None = None, warnings: list[str] | None = None):
+    return templates.TemplateResponse("batch.html", {"request": request, "error": error, "warnings": warnings or []})
+
+@app.post("/batch/upload")
+async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
+    text = (await file.read()).decode("utf-8", errors="ignore")
+    rows, warnings = parse_csv(text)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed = []
+    for row in rows:
+        try:
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO(); writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"]); writer.writeheader()
+    for row in processed: writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts} )
+
+@app.post("/batch/fetch")
+async def batch_fetch(csv_url: str = Form(...), session: AsyncSession = Depends(get_session)):
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            r = await client.get(csv_url); r.raise_for_status(); content = r.text
+    except Exception as e:
+        return RedirectResponse(str(URL("/batch").include_query_params(error=str(e))), status_code=303)
+    rows, warnings = parse_csv(content)
+    if not rows:
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+    processed = []
+    for row in rows:
+        try:
+            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+        except Exception as e:
+            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO(); writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"]); writer.writeheader()
+    for row in processed: writer.writerow(row)
+    out.seek(0)
+    ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts} )
