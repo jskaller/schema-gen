@@ -4,7 +4,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse,
 from fastapi.templating import Jinja2Templates
 from starlette.datastructures import URL
 
-import io, csv, json, sys, asyncio, uuid
+import io, csv, json, sys, asyncio, uuid, traceback
 import httpx
 from datetime import datetime
 from urllib.parse import urlparse
@@ -28,7 +28,7 @@ from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.progress import create_job, update_job, finish_job, get_job
 from app.services.enhance import enhance_jsonld
 
-app = FastAPI(title="Schema Gen", version="1.7.8")
+app = FastAPI(title="Schema Gen", version="1.7.9")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.get("/favicon.ico")
@@ -46,62 +46,122 @@ async def _startup():
     print("[ROUTES at startup]\n" + "\n".join(sorted(f"{','.join(sorted(getattr(r,'methods',{'*'})))} {getattr(r,'path','?')}" for r in app.router.routes)), file=sys.stderr)
 
 def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
-    host = urlparse(url).netloc.replace(":", "_") or "schema"
+    host = urlparse(url or '').netloc.replace(":", "_") or "schema"
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     return f"{prefix}-{host}-{ts}.{ext}"
 
 async def resolve_types(session: AsyncSession, label: str | None):
     s = await get_settings(session)
     mapping = s.page_type_map or {}
-    effective_label = (label or s.page_type or "Hospital")
+    effective_label = (label or getattr(s, "page_type", None) or "Hospital")
     cfg = mapping.get(effective_label, {"primary": effective_label, "secondary": []})
     primary = cfg.get("primary") or effective_label
     secondary = cfg.get("secondary") or []
     return effective_label, primary, secondary, s
 
 async def _process_single(url: str, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, label, session: AsyncSession):
-    raw_html = await fetch_url(url)
-    cleaned_text = extract_clean_text(raw_html)
-    sig = extract_signals(raw_html)
+    try:
+        raw_html = await fetch_url(url)
+    except Exception:
+        raw_html = ""
+    raw_html = raw_html or ""
+    try:
+        cleaned_text = extract_clean_text(raw_html) or ""
+    except Exception:
+        cleaned_text = ""
+    try:
+        sig = extract_signals(raw_html) or {}
+    except Exception:
+        sig = {}
 
     page_label, primary_type, secondary_types, s = await resolve_types(session, label)
-    provider = get_provider(s.provider or "dummy", model=s.provider_model or None)
+    provider = get_provider(s.provider or "dummy", model=(s.provider_model or None))
 
     payload = GenerationInputs(
-        url=url, cleaned_text=cleaned_text, topic=topic, subject=subject, audience=audience,
-        address=address or sig.get("address"), phone=phone or sig.get("phone"), sameAs=sig.get("sameAs"),
+        url=url or "",
+        cleaned_text=cleaned_text,
+        topic=topic or "",
+        subject=subject or "",
+        audience=audience or "",
+        address=address or sig.get("address"),
+        phone=phone or sig.get("phone"),
+        sameAs=sig.get("sameAs"),
         page_type=primary_type,
     )
-    base_jsonld = await provider.generate_jsonld(payload)
 
-    inputs = {"topic": topic, "subject": subject, "address": address, "phone": phone, "url": url}
-    primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
-    final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs) if secondary_types else primary_node
-    final_jsonld = enhance_jsonld(final_jsonld, secondary_types, raw_html, url, topic, subject)
+    try:
+        base_jsonld = await provider.generate_jsonld(payload) or {}
+    except Exception as e:
+        base_jsonld = {}
 
-    schema_json = load_schema(primary_type)
-    effective_required = (s.required_fields or defaults_for(primary_type)["required"])
-    effective_recommended = (s.recommended_fields or defaults_for(primary_type)["recommended"])
+    inputs = {"topic": topic or "", "subject": subject or "", "address": address or "", "phone": phone or "", "url": url or ""}
+    try:
+        primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
+    except Exception:
+        primary_node = {"@context": "https://schema.org", "@type": primary_type, "url": url or ""}
 
-    root_node = final_jsonld["@graph"][0] if isinstance(final_jsonld, dict) and "@graph" in final_jsonld else final_jsonld
-    valid, errors = validate_against_schema(root_node, schema_json)
-    overall, details = score_jsonld(root_node, effective_required, effective_recommended)
+    try:
+        final_jsonld = assemble_graph(primary_node, secondary_types or [], url or "", inputs) if secondary_types else primary_node
+    except Exception:
+        final_jsonld = primary_node
 
-    missing_recommended = [key for key in effective_recommended if key not in root_node or root_node.get(key) in (None, "", [])]
+    try:
+        final_jsonld = enhance_jsonld(final_jsonld, secondary_types or [], raw_html, url or "", topic or "", subject or "")
+    except Exception:
+        pass
+
+    try:
+        schema_json = load_schema(primary_type)
+    except Exception:
+        schema_json = {}
+
+    defs = defaults_for(primary_type) if primary_type else {"required": [], "recommended": []}
+    effective_required = (getattr(s, "required_fields", None) or defs["required"])
+    effective_recommended = (getattr(s, "recommended_fields", None) or defs["recommended"])
+
+    root_node = final_jsonld["@graph"][0] if isinstance(final_jsonld, dict) and "@graph" in final_jsonld and isinstance(final_jsonld["@graph"], list) and final_jsonld["@graph"] else final_jsonld
+    if root_node is None:
+        root_node = {"@context": "https://schema.org", "@type": primary_type or "Thing", "url": url or ""}
+
+    try:
+        valid, errors = validate_against_schema(root_node, schema_json)
+    except Exception as e:
+        valid, errors = False, [f"Validation failed: {e}"]
+
+    try:
+        overall, details = score_jsonld(root_node, effective_required, effective_recommended)
+    except Exception:
+        overall, details = 0, {"subscores": {}, "notes": []}
+
+    missing_recommended = [key for key in (effective_recommended or []) if key not in (root_node or {}) or (root_node or {}).get(key) in (None, "", [])]
     tips = [f"Consider adding: {key}" for key in missing_recommended]
 
     return {
-        "url": url, "page_type_label": page_label, "primary_type": primary_type, "secondary_types": secondary_types,
-        "topic": topic, "subject": subject, "audience": audience,
-        "address": root_node.get("address"), "phone": root_node.get("telephone"),
-        "excerpt": cleaned_text[:2000], "length": len(cleaned_text),
-        "jsonld": final_jsonld, "valid": valid, "validation_errors": errors,
-        "overall": overall, "details": details, "iterations": 0,
-        "comparisons": [], "comparison_notes": [],
+        "url": url or "",
+        "page_type_label": page_label,
+        "primary_type": primary_type,
+        "secondary_types": secondary_types or [],
+        "topic": topic or "",
+        "subject": subject or "",
+        "audience": audience or "",
+        "address": (root_node or {}).get("address"),
+        "phone": (root_node or {}).get("telephone") or phone or "",
+        "excerpt": (cleaned_text or "")[:2000],
+        "length": len(cleaned_text or ""),
+        "jsonld": final_jsonld,
+        "valid": bool(valid),
+        "validation_errors": errors or [],
+        "overall": overall,
+        "details": details,
+        "iterations": 0,
+        "comparisons": [],
+        "comparison_notes": [],
         "advice": tips,
-        "effective_required": effective_required, "effective_recommended": effective_recommended,
+        "effective_required": effective_required or [],
+        "effective_recommended": effective_recommended or [],
     }
 
+# ---------- Public ----------
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None, session: AsyncSession = Depends(get_session)):
     mapping = await get_map(session)
@@ -131,15 +191,19 @@ async def submit_async(request: Request,
     await create_job(job_id)
 
     async def runner():
-        steps = [("Fetching URL",10),("Extracting text",25),("Scanning signals",35),("Generating JSON-LD",55),("Normalizing",70),("Assembling graph",80),("Enhancing",85),("Validating",90),("Scoring & advice",95)]
         try:
+            await update_job(job_id, 5, "Starting")
+            steps = [("Fetching URL",15),("Extracting text",30),("Scanning signals",40),("Generating JSON-LD",60),("Normalizing",75),("Assembling graph",85),("Enhancing",92),("Validating/Scoring",96)]
             for msg, pct in steps:
                 await update_job(job_id, pct, msg)
-                await asyncio.sleep(0.12)
+                await asyncio.sleep(0.05)
             result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, page_type, session)
             await finish_job(job_id, result)
         except Exception as e:
+            tb = traceback.format_exc()
             await update_job(job_id, 100, f"Error: {e}")
+            # also store an error result so /result can render something
+            await finish_job(job_id, {"url": url, "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
     asyncio.create_task(runner())
     return {"job_id": job_id}
 
@@ -149,11 +213,11 @@ async def events(job_id: str):
         while True:
             job = await get_job(job_id)
             if not job: break
-            progress = job["progress"]
-            msg = job["messages"][-1]["msg"] if job["messages"] else "Starting..."
-            yield f"data: {json.dumps({'progress': progress, 'msg': msg})}\n\n"
-            if progress >= 100: break
-            await asyncio.sleep(1)
+            progress = job.get("progress", 0)
+            msg = job.get("messages", [{"msg": "Starting..."}])[-1]["msg"]
+            yield f"data: {json.dumps({'progress': progress, 'msg': msg})}\\n\\n"
+            if progress >= 100 or job.get("result"): break
+            await asyncio.sleep(0.5)
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 @app.get("/progress/{job_id}", response_class=HTMLResponse)
@@ -201,8 +265,8 @@ async def admin_post(request: Request,
         if use_defaults:
             defs = defaults_for(page_type); req, rec = defs["required"], defs["recommended"]
         else:
-            req = json.loads(required_fields) if required_fields.strip() else None
-            rec = json.loads(recommended_fields) if recommended_fields.strip() else None
+            req = json.loads(required_fields) if (required_fields or "").strip() else None
+            rec = json.loads(recommended_fields) if (recommended_fields or "").strip() else None
         ptm = json.loads(page_type_map) if page_type_map else None
     except Exception as e:
         return await admin_get(request, session, error=str(e))
@@ -226,7 +290,7 @@ async def admin_types(request: Request, session: AsyncSession = Depends(get_sess
 
 @app.post("/admin/types/upsert", response_class=HTMLResponse)
 async def admin_types_upsert(request: Request, label: str = Form(...), primary: str = Form(...), secondary: str = Form(""), session: AsyncSession = Depends(get_session)):
-    secondaries = [s.strip() for s in secondary.split(",") if s.strip()]
+    secondaries = [s.strip() for s in (secondary or "").split(",") if s.strip()]
     await upsert_type(session, label, primary, secondaries)
     return RedirectResponse(url="/admin/types", status_code=303)
 
@@ -253,10 +317,10 @@ async def history_detail(request: Request, run_id: int, session: AsyncSession = 
 async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
     try:
         data = json.loads(jsonld)
+        payload = json.dumps(data, indent=2)
     except Exception:
-        data = jsonld
+        payload = jsonld
     filename = _safe_filename_from_url(url, "schema", "json")
-    payload = json.dumps(data, indent=2) if isinstance(data, dict) else str(data)
     return Response(content=payload, media_type="application/ld+json", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 @app.post("/export/csv")
@@ -295,7 +359,7 @@ async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Dep
     for row in processed: writer.writerow(row)
     out.seek(0)
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-"+ts+".csv"'} )
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts} )
 
 @app.post("/batch/fetch")
 async def batch_fetch(csv_url: str = Form(...), session: AsyncSession = Depends(get_session)):
@@ -318,4 +382,4 @@ async def batch_fetch(csv_url: str = Form(...), session: AsyncSession = Depends(
     for row in processed: writer.writerow(row)
     out.seek(0)
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-"+ts+".csv"'} )
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts} )
