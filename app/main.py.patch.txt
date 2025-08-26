@@ -1,0 +1,12 @@
+
+--- a/app/main.py
++++ b/app/main.py
+@@
+-from app.services.graph import assemble_graph
++from app.services.graph import assemble_graph
++from app.services.enhance import enhance_jsonld
+@@
+-    final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs) if secondary_types else primary_node
++    final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs) if secondary_types else primary_node
++    # Enrichment: breadcrumbs / socials / phones / specialty normalization
++    final_jsonld = enhance_jsonld(final_jsonld, secondary_types, raw_html, url, topic, subject)
