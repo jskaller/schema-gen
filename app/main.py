@@ -27,8 +27,9 @@ from app.services.graph import assemble_graph
 from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.progress import create_job, update_job, finish_job, get_job
 from app.services.enhance import enhance_jsonld
+from app.services.sanitize import sanitize_jsonld
 
-app = FastAPI(title="Schema Gen", version="1.8.0")
+app = FastAPI(title="Schema Gen", version="1.8.3")
 templates = Jinja2Templates(directory="app/web/templates")
 
 @app.get("/favicon.ico")
@@ -120,11 +121,17 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         print(f"[_process_single] assemble_graph failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
         final_jsonld = primary_node
 
+    # Enrich (safe) then Sanitize (flatten/make root/ensure secondaries)
     try:
         final_jsonld = enhance_jsonld(final_jsonld, secondary_types or [], raw_html, url or "", topic or "", subject or "")
         print("[_process_single] enhance_jsonld ok", file=sys.stderr)
     except Exception as e:
-        print(f"[_process_single] enhance_jsonld failed: {e}\n{traceback.format_exc()}", file=sys.stderr)
+        print(f"[_process_single] enhance_jsonld failed (non-fatal): {e}\n{traceback.format_exc()}", file=sys.stderr)
+    try:
+        final_jsonld = sanitize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [])
+        print("[_process_single] sanitize_jsonld ok", file=sys.stderr)
+    except Exception as e:
+        print(f"[_process_single] sanitize_jsonld failed (non-fatal): {e}\n{traceback.format_exc()}", file=sys.stderr)
 
     try:
         schema_json = load_schema(primary_type)
