@@ -28,10 +28,9 @@ from app.services.history import record_run, list_runs, get_run as db_get_run
 from app.services.progress import create_job, update_job, finish_job, get_job
 from app.services.enhance import enhance_jsonld
 
-app = FastAPI(title="Schema Gen", version="1.7.0")
+app = FastAPI(title="Schema Gen", version="1.7.1")
 templates = Jinja2Templates(directory="app/web/templates")
 
-# Diagnostics
 @app.get("/__routes")
 async def __routes():
     data = [{"path": getattr(r, "path", "?"), "methods": sorted(list(getattr(r, "methods", {'*'})))} for r in app.router.routes]
@@ -73,11 +72,7 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
 
     inputs = {"topic": topic, "subject": subject, "address": address, "phone": phone, "url": url}
     primary_node = normalize_jsonld(base_jsonld, primary_type, inputs)
-
-    # Assemble secondary nodes if configured
     final_jsonld = assemble_graph(primary_node, secondary_types, url, inputs) if secondary_types else primary_node
-
-    # --- Enhancement layer: breadcrumbs / socials / phones / specialty normalization ---
     final_jsonld = enhance_jsonld(final_jsonld, secondary_types, raw_html, url, topic, subject)
 
     schema_json = load_schema(primary_type)
@@ -103,7 +98,6 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         "effective_required": effective_required, "effective_recommended": effective_recommended,
     }
 
-# Core
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, ok: str | None = None, error: str | None = None, session: AsyncSession = Depends(get_session)):
     mapping = await get_map(session)
@@ -122,7 +116,6 @@ async def submit(request: Request,
     await record_run(session, result)
     return templates.TemplateResponse("result.html", {"request": request, **result})
 
-# Async progress flow
 @app.post("/submit_async")
 async def submit_async(request: Request,
     url: str = Form(""), page_type: str | None = Form(None), topic: str | None = Form(None),
@@ -138,9 +131,8 @@ async def submit_async(request: Request,
         try:
             for msg, pct in steps:
                 await update_job(job_id, pct, msg)
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(0.12)
             result = await _process_single(url, topic, subject, audience, address, phone, compare_existing, competitor1, competitor2, page_type, session)
-            await record_run(session, result)
             await finish_job(job_id, result)
         except Exception as e:
             await update_job(job_id, 100, f"Error: {e}")
@@ -165,13 +157,17 @@ async def progress_page(request: Request, job_id: str):
     return templates.TemplateResponse("progress.html", {"request": request, "job_id": job_id})
 
 @app.get("/result/{job_id}", response_class=HTMLResponse)
-async def result_page(request: Request, job_id: str):
+async def result_page(request: Request, job_id: str, session: AsyncSession = Depends(get_session)):
     job = await get_job(job_id)
     if not job or not job.get("result"):
         return RedirectResponse("/")
-    return templates.TemplateResponse("result.html", {"request": request, **job["result"]})
+    result = job["result"]
+    try:
+        await record_run(session, result)
+    except Exception as e:
+        print(f"[history write failed] {e}", file=sys.stderr)
+    return templates.TemplateResponse("result.html", {"request": request, **result})
 
-# Admin
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_get(request: Request, session: AsyncSession = Depends(get_session), ok: str | None = None, error: str | None = None):
     s = await get_settings(session)
@@ -223,7 +219,6 @@ async def admin_types_delete(request: Request, label: str = Form(...), session: 
     await delete_type(session, label)
     return RedirectResponse(url="/admin/types", status_code=303)
 
-# History
 @app.get("/history", response_class=HTMLResponse)
 async def history_list_page(request: Request, q: str | None = None, session: AsyncSession = Depends(get_session)):
     rows = await list_runs(session, q=q or None, limit=200)
@@ -236,7 +231,6 @@ async def history_detail(request: Request, run_id: int, session: AsyncSession = 
         return RedirectResponse(url="/history", status_code=303)
     return templates.TemplateResponse("history_detail.html", {"request": request, "run": run})
 
-# Export
 @app.post("/export/jsonld")
 async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
     data = json.loads(jsonld)
@@ -251,7 +245,6 @@ async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str =
     out.seek(0); filename = _safe_filename_from_url(url, "schema-single", "csv")
     return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
-# Batch
 def _csv_from_items(items: list[dict]) -> io.StringIO:
     out = io.StringIO(); writer = csv.writer(out)
     writer.writerow(["url","page_type_label","primary_type","secondary_types","score","valid","jsonld"])
@@ -305,4 +298,3 @@ async def batch_export_from_preview(rows_json: str = Form(...)):
     items = json.loads(rows_json); out = _csv_from_items(items)
     filename = f"schema-batch-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.csv"
     return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
-
