@@ -1,1 +1,89 @@
-<!-- dummy batch_run.html -->
+{% extends "shared/base.html" %}
+{% block title %}Batch Preview{% endblock %}
+{% block content %}
+<div class="container my-4">
+  <h2>Batch Preview</h2>
+  <p class="text-muted">Live progress per URL. When complete, use <em>Preview</em> to see full scoring and validation. If your CSV included competitor columns, their scores will appear here too.</p>
+
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>URL</th>
+        <th>Status</th>
+        <th style="width:220px;">Progress</th>
+        <th>Score</th>
+        <th>Comp #1</th>
+        <th>Comp #2</th>
+        <th>Preview</th>
+      </tr>
+    </thead>
+    <tbody id="jobs-body">
+      {% for j in jobs %}
+      <tr data-job="{{ j.job_id }}">
+        <td>{{ loop.index }}</td>
+        <td class="url"><a href="{{ j.url }}" target="_blank" rel="noopener">{{ j.url }}</a></td>
+        <td class="status">Queued</td>
+        <td class="progress">
+          <div class="progress" style="height: 18px;">
+            <div class="progress-bar" role="progressbar" style="width: 3%;">3%</div>
+          </div>
+        </td>
+        <td class="score">—</td>
+        <td class="comp1">—</td>
+        <td class="comp2">—</td>
+        <td class="preview"><span class="text-muted">Waiting…</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+(function(){
+  const rows = document.querySelectorAll('tr[data-job]');
+  rows.forEach((row) => {
+    const id = row.getAttribute('data-job');
+    const status = row.querySelector('.status');
+    const pb = row.querySelector('.progress-bar');
+    const scoreCell = row.querySelector('.score');
+    const c1Cell = row.querySelector('.comp1');
+    const c2Cell = row.querySelector('.comp2');
+    const previewCell = row.querySelector('.preview');
+
+    const es = new EventSource(`/events/${id}`);
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        pb.style.width = `${data.progress}%`;
+        pb.textContent = `${data.progress}%`;
+        status.textContent = data.msg || 'Working…';
+        if (data.progress >= 100) {
+          es.close();
+          fetch(`/api/job/${id}`).then(r => r.json()).then(j => {
+            if (j.status === 'done' && j.result) {
+              const r = j.result;
+              scoreCell.textContent = (typeof r.overall !== 'undefined') ? r.overall : '—';
+              const comps = Array.isArray(r.comparisons) ? r.comparisons : [];
+              c1Cell.textContent = comps[0] ? comps[0].overall : '—';
+              c2Cell.textContent = comps[1] ? comps[1].overall : '—';
+              previewCell.innerHTML = `<a class="btn btn-sm btn-outline-primary" href="/result/${id}">Preview</a>`;
+              status.textContent = 'Done';
+              pb.classList.add('bg-success');
+            } else {
+              previewCell.innerHTML = `<a class="btn btn-sm btn-outline-primary" href="/result/${id}">Preview</a>`;
+              status.textContent = 'Done';
+              pb.classList.add('bg-success');
+            }
+          }).catch(() => {
+            previewCell.innerHTML = `<a class="btn btn-sm btn-outline-primary" href="/result/${id}">Preview</a>`;
+            status.textContent = 'Done';
+            pb.classList.add('bg-success');
+          });
+        }
+      } catch (e) {}
+    };
+  });
+})();
+</script>
+{% endblock %}

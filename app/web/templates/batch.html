@@ -1,1 +1,23 @@
-<!-- dummy batch.html -->
+{% extends "shared/base.html" %}{% block title %}Batch{% endblock %}{% block content %}
+<div class="container my-4">
+  <h2>Batch</h2>
+  <div class="row g-3">
+    <div class="col-md-6">
+      <form method="post" action="/batch/upload_async" enctype="multipart/form-data">
+        <label class="form-label">Upload CSV (async preview)</label>
+        <input class="form-control" type="file" name="file" required>
+        <button class="btn btn-success mt-2">Process & Preview</button>
+      </form>
+    </div>
+    <div class="col-md-6">
+      <form method="post" action="/batch/fetch_async">
+        <label class="form-label">Fetch CSV by URL (async preview)</label>
+        <div class="input-group">
+          <input class="form-control" type="url" name="csv_url" placeholder="https://..." required>
+          <button class="btn btn-success">Process & Preview</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
