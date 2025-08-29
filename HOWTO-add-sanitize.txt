@@ -1,0 +1,7 @@
+
+# --- SANITIZE BEFORE VALIDATION ---
+from app.services.sanitize import sanitize_jsonld
+# (inside _process_single, right after enhance_jsonld call)
+# final_jsonld = enhance_jsonld(...)
+# add:
+# final_jsonld = sanitize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [])

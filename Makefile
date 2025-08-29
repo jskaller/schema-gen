@@ -13,10 +13,10 @@ setup:
 	. .venv/bin/activate && $(PY) -m playwright install --with-deps chromium
 
 dev:
-	. .venv/bin/activate && uvicorn app.main:app --reload
+	. .venv/bin/activate && uvicorn app.main:app --reload --port 8001
 
 run:
-	. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8000
+	. .venv/bin/activate && uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 fmt:
 	. .venv/bin/activate && ruff format && ruff check --fix
