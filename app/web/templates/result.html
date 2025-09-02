@@ -1,1 +1,123 @@
-<!-- dummy result.html -->
+{% extends "base.html" %}
+{% block title %}Schema Gen – Result{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10 col-xl-9">
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <h4 class="mb-0">Result</h4>
+      <div>
+        <a class="btn btn-sm btn-outline-secondary" href="/">New Run</a>
+        <a class="btn btn-sm btn-outline-secondary" href="/history">History</a>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-body">
+        <div class="mb-2"><strong>URL:</strong> <a href="{{ url }}" target="_blank" rel="noopener">{{ url }}</a></div>
+        {% if title %}<div class="mb-2"><strong>Title:</strong> {{ title }}</div>{% endif %}
+        <div class="d-flex gap-2 flex-wrap">
+          {% set s = score_overall or score or None %}
+          {% if s is not none %}
+            <span class="badge text-bg-primary">Score: {{ s }}</span>
+          {% endif %}
+          {% if valid is not none %}
+            {% if valid %}
+              <span class="badge text-bg-success">Valid</span>
+            {% else %}
+              <span class="badge text-bg-danger">Not Valid</span>
+            {% endif %}
+          {% endif %}
+          {% if page_type %}<span class="badge text-bg-secondary">{{ page_type }}</span>{% endif %}
+          {% if secondary_types %}
+            {% for t in secondary_types %}<span class="badge text-bg-light border">{{ t }}</span>{% endfor %}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% if validation_errors and validation_errors|length %}
+      <div class="alert alert-warning">
+        <strong>Validation Issues</strong>
+        <ul class="mb-0">
+          {% for err in validation_errors %}
+            <li>{{ err }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+
+    {% set advice_list = (details and details.get('advice')) or advice %}
+    {% if advice_list %}
+      <div class="card shadow-sm mb-3">
+        <div class="card-header"><strong>Advice</strong></div>
+        <div class="card-body">
+          <ul class="mb-0">
+            {% for tip in advice_list %}
+              <li>{{ tip }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <strong>JSON-LD</strong>
+        <div class="d-flex gap-2">
+          <form method="post" action="/export/jsonld" class="d-inline">
+            <input type="hidden" name="url" value="{{ url }}">
+            <input type="hidden" name="jsonld" value='{{ (jsonld or {}) | tojson }}'>
+            <button class="btn btn-sm btn-primary" type="submit">Download .json</button>
+          </form>
+          <form method="post" action="/export/csv" class="d-inline">
+            <input type="hidden" name="url" value="{{ url }}">
+            <input type="hidden" name="score" value="{{ score_overall or score or '' }}">
+            <input type="hidden" name="jsonld" value='{{ (jsonld or {}) | tojson }}'>
+            <button class="btn btn-sm btn-outline-primary" type="submit">Download .csv</button>
+          </form>
+        </div>
+      </div>
+      <div class="card-body">
+        {% if jsonld %}
+          <pre class="p-2 bg-light border rounded" style="white-space: pre-wrap;">{{ jsonld | tojson(indent=2) }}</pre>
+        {% else %}
+          <div class="alert alert-info mb-0">No JSON-LD was produced for this run.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if details %}
+      <div class="accordion" id="acc">
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accDetails">
+              Debug Details
+            </button>
+          </h2>
+          <div id="accDetails" class="accordion-collapse collapse" data-bs-parent="#acc">
+            <div class="accordion-body">
+              <pre class="p-2 bg-light border rounded" style="white-space: pre-wrap;">{{ details | tojson(indent=2) }}</pre>
+            </div>
+          </div>
+        </div>
+
+        {% if comparisons %}
+        <div class="accordion-item">
+          <h2 class="accordion-header">
+            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#accComparisons">
+              Comparisons
+            </button>
+          </h2>
+        <div id="accComparisons" class="accordion-collapse collapse" data-bs-parent="#acc">
+          <div class="accordion-body">
+            <pre class="p-2 bg-light border rounded" style="white-space: pre-wrap;">{{ comparisons | tojson(indent=2) }}</pre>
+          </div>
+        </div>
+        </div>
+        {% endif %}
+      </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

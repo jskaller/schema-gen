@@ -1,0 +1,5 @@
+Commit: fix: implement result.html to render job output
+- Replace placeholder dummy result.html with a full Bootstrap-styled viewer
+- Show URL, title, score, validity, advice, validation errors
+- Pretty-print JSON-LD and add export buttons (JSON & CSV)
+- Use only relative URLs to avoid port mismatches
