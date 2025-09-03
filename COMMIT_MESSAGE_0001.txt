@@ -1,5 +1,11 @@
-Commit: fix: implement result.html to render job output
-- Replace placeholder dummy result.html with a full Bootstrap-styled viewer
-- Show URL, title, score, validity, advice, validation errors
-- Pretty-print JSON-LD and add export buttons (JSON & CSV)
-- Use only relative URLs to avoid port mismatches
+Commit: feat: complete result rendering and restore competitor + batch UX
+
+- Implement full result viewer in `result.html`:
+  - Show URL, title, score, validity
+  - Pretty-printed JSON-LD with export buttons
+  - Advice, validation errors, comparisons
+- Restore competitor input fields:
+  - `compare_existing`, `competitor1`, `competitor2` in home form
+- Fix broken batch templates:
+  - `batch.html` and `batch_run.html` now use `base.html` correctly
+- All links and fetches remain relative (port-agnostic)

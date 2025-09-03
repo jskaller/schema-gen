@@ -1,0 +1,4 @@
+Commit: fix: restore competitor inputs and repair batch templates
+- index.html: add compare_existing, competitor1, competitor2 fields
+- batch.html, batch_run.html: extend base.html (not shared/base.html) to render correctly
+- All links remain relative (port-agnostic)

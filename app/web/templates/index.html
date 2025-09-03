@@ -53,6 +53,24 @@
             </div>
           </div>
 
+          
+          <div class="row">
+            <div class="col-md-12">
+              <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="compare_existing" name="compare_existing" value="1">
+                <label class="form-check-label" for="compare_existing">Compare with existing & competitors</label>
+              </div>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Competitor #1 URL</label>
+              <input class="form-control" name="competitor1" placeholder="https://competitor-one.example">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label class="form-label">Competitor #2 URL</label>
+              <input class="form-control" name="competitor2" placeholder="https://competitor-two.example">
+            </div>
+          </div>
+
           <div class="text-end d-flex gap-2 justify-content-end">
             <button class="btn btn-primary" type="submit">Generate</button>
             <button id="asyncBtn" class="btn btn-success" type="button">Generate (show progress)</button>
