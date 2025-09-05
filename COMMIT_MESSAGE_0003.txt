@@ -1,0 +1,6 @@
+Commit: fix: enforce primary @type and broaden schema support
+
+- normalize.py: force root node '@type' to the configured primary type
+  (prevents custom labels like "Medical Specialty Page" from leaking)
+- schemas.py: add minimal schemas for MedicalService and MedicalSpecialty
+  so choosing them as primary won't fall back to MedicalOrganization

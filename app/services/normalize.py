@@ -88,3 +88,9 @@ def normalize_jsonld(obj: Dict[str, Any], primary_type: str, inputs: Dict[str, A
             obj["medicalSpecialty"] = inputs["topic"]
 
     return obj
+
+    # ----- enforce primary type -----
+    # No matter what the model returned, the root node in our pipeline represents the configured
+    # primary type. Avoid leaking custom labels like "Medical Specialty Page".
+    obj["@type"] = primary_type
+

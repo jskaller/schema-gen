@@ -1,4 +1,5 @@
-Commit: fix: restore competitor inputs and repair batch templates
-- index.html: add compare_existing, competitor1, competitor2 fields
-- batch.html, batch_run.html: extend base.html (not shared/base.html) to render correctly
-- All links remain relative (port-agnostic)
+Commit: docs: show expected CSV columns on batch page
+
+- `batch.html` now includes a hint explaining required/optional CSV headers:
+  - Required: `url`
+  - Optional: `page_type`, `topic`, `subject`, `audience`, `address`, `phone`, `compare_existing`, `competitor1`, `competitor2`

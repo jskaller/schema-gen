@@ -3,6 +3,30 @@ from __future__ import annotations
 from typing import Dict, Any
 
 # Simple, pragmatic JSON Schemas for our primary types.
+
+MEDICAL_SERVICE_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@context": {"type": ["string", "null"]},
+        "@type": {"const": "MedicalService"},
+        "name": {"type": ["string", "null"]},
+        "url": {"type": ["string", "null"]},
+        "description": {"type": ["string", "null"]},
+    },
+    "required": ["@type"],
+}
+
+MEDICAL_SPECIALTY_SCHEMA: Dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "@context": {"type": ["string", "null"]},
+        "@type": {"const": "MedicalSpecialty"},
+        "name": {"type": ["string", "null"]},
+        "description": {"type": ["string", "null"]},
+    },
+    "required": ["@type"],
+}
+
 # Each schema enforces the @type constant and a minimal required set.
 
 MEDICAL_ORGANIZATION_SCHEMA: Dict[str, Any] = {

@@ -13,3 +13,6 @@ __pycache__/
 *.sqlite*
 *.db
 playwright/.cache/
+
+#other
+*.zip
