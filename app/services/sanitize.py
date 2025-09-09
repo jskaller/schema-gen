@@ -80,7 +80,17 @@ def _fill_from_hints(n: Dict, hints: Dict[str, Any]) -> None:
     if "sameAs" not in n and hints.get("sameAs"): n["sameAs"] = hints["sameAs"]
     if "medicalSpecialty" not in n and hints.get("medicalSpecialty"): n["medicalSpecialty"] = hints["medicalSpecialty"]
     if "description" not in n and hints.get("description"): n["description"] = hints["description"]
+    if "openingHours" not in n and hints.get("openingHours"): n["openingHours"] = hints["openingHours"]
     _coerce_address(n)
+    # CONTACTPOINT_FROM_TELEPHONES
+    try:
+        tels = hints.get("telephone")
+        if tels and isinstance(tels, list):
+            cps = [{"@type":"ContactPoint","telephone": t} for t in tels]
+            if n.get("contactPoint") is None:
+                n["contactPoint"] = cps
+    except Exception:
+        pass
 
 def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_types: Optional[List[str]] = None, hints: Optional[Dict[str, Any]] = None) -> Dict:
     hints = hints or {}
@@ -92,6 +102,15 @@ def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_
         n = _drop_nulls_and_empty(n)
         _coerce_audience(n)
         _coerce_address(n)
+    # CONTACTPOINT_FROM_TELEPHONES
+    try:
+        tels = hints.get("telephone")
+        if tels and isinstance(tels, list):
+            cps = [{"@type":"ContactPoint","telephone": t} for t in tels]
+            if n.get("contactPoint") is None:
+                n["contactPoint"] = cps
+    except Exception:
+        pass
         cleaned.append(n)
 
     # Ensure root primary

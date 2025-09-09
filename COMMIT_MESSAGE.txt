@@ -1,0 +1,5 @@
+signals.py: hard fix for address regex and richer extraction
+
+- Replace entire file to ensure clean import and stable extraction.
+- Safe non-VERBOSE ADDRESS_HINT_RE; multiple phones; openingHours; social/affiliate sameAs.
+- Returns: {'telephone': list|None, 'address': str|None, 'openingHours': [str]|None, 'sameAs': [str]|None}.
