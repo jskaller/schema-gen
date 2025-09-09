@@ -1,5 +1,0 @@
-Commit: docs: show expected CSV columns on batch page
-
-- `batch.html` now includes a hint explaining required/optional CSV headers:
-  - Required: `url`
-  - Optional: `page_type`, `topic`, `subject`, `audience`, `address`, `phone`, `compare_existing`, `competitor1`, `competitor2`

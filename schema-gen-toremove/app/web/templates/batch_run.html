@@ -94,43 +94,38 @@
   });
 })();
 
-
 // --- Enable 'Download All' when all jobs complete --- /* DOWNLOAD_READY_MARKER */
 (function(){
   const downloadBtn = document.getElementById('downloadAllBtn');
   const jobIdsField = document.getElementById('jobIdsField');
   if (!downloadBtn || !jobIdsField) return;
+  // Collect all job ids from the table rows (data-job-id is already in the template)
+  const jobRows = Array.from(document.querySelectorAll('tr[data-job-id]'));
+  const jobIds = jobRows.map(tr => tr.getAttribute('data-job-id')).filter(Boolean);
+  jobIdsField.value = jobIds.join(',');
 
-  function collectJobIds() {
-    const rows = Array.from(document.querySelectorAll('tr[data-job]'));
-    return rows.map(tr => tr.getAttribute('data-job')).filter(Boolean);
-  }
-
-  function isTerminalStatus(txt) {
-    const t = (txt || '').toLowerCase();
+  function isTerminal(statusText) {
+    const t = (statusText || '').toLowerCase();
     return t.includes('done') || t.includes('error');
   }
 
   function allDone() {
-    const rows = Array.from(document.querySelectorAll('tr[data-job]'));
-    if (rows.length === 0) return false;
-    return rows.every(tr => {
-      const statusEl = tr.querySelector('.status');
+    const rows = Array.from(document.querySelectorAll('tr[data-job-id]'));
+    return rows.length > 0 && rows.every(tr => {
+      const statusEl = tr.querySelector('[data-status]');
       const txt = statusEl ? statusEl.textContent : '';
-      return isTerminalStatus(txt);
+      return isTerminal(txt);
     });
   }
 
-  // Set job IDs once on load
-  const ids = collectJobIds();
-  jobIdsField.value = ids.join(',');
-
-  // Enable when complete
-  const tick = () => {
+  const maybeEnable = () => {
     if (allDone()) downloadBtn.removeAttribute('disabled');
   };
-  const interval = setInterval(tick, 1000);
-  tick();
+
+  // Check periodically
+  const interval = setInterval(maybeEnable, 1000);
+  // Also run once on load
+  maybeEnable();
 })();
 
 </script>

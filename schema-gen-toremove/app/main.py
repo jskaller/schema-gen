@@ -525,35 +525,3 @@ async def batch_fetch_async(request: Request, csv_url: str = Form(...), session:
         asyncio.create_task(runner())
         jobs.append({"job_id": job_id, "url": row.get("url","")})
     return templates.TemplateResponse("batch_run.html", {"request": request, "jobs": jobs})
-
-@app.post("/batch/export_jobs")
-async def batch_export_jobs(job_ids: str = Form(...)):
-    """
-    Accepts a comma-separated list of job_ids and returns a single CSV download
-    with one row per job result (url, overall score, valid flag, and JSON-LD).
-    """
-    ids = [j.strip() for j in (job_ids or "").split(",") if j.strip()]
-    # Build CSV in-memory
-    import io, csv
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["url","overall","valid","jsonld"])
-    for jid in ids:
-        job = await get_job(jid)
-        # job structure from finish_job: {"url": ..., "overall": ..., "valid": ..., "jsonld": ...}
-        if not job or "result" not in job:
-            # Try flat format fallback
-            res = job or {}
-        else:
-            res = job["result"]
-        url = res.get("url","")
-        overall = res.get("overall", 0)
-        valid = "yes" if res.get("valid") else "no"
-        jsonld_obj = res.get("jsonld", {})
-        try:
-            json_str = json.dumps(jsonld_obj, ensure_ascii=False)
-        except Exception:
-            json_str = "{}"
-        w.writerow([url, overall, valid, json_str])
-    filename = f"batch-results-{uuid.uuid4().hex}.csv"
-    return Response(buf.getvalue(), media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
