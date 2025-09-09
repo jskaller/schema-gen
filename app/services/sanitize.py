@@ -1,6 +1,7 @@
 
 from typing import Any, Dict, List, Optional
 import re
+from urllib.parse import urlparse
 
 def _ensure_graph(data: Any) -> List[Dict]:
     graph: List[Dict] = []
@@ -92,6 +93,23 @@ def _fill_from_hints(n: Dict, hints: Dict[str, Any]) -> None:
     except Exception:
         pass
 
+def _needs_breadcrumbs(url: Optional[str]) -> bool:
+    try:
+        u = urlparse(url or "")
+        return bool(u.path and u.path.strip("/"))
+    except Exception:
+        return False
+
+
+def _has_required_jobposting_fields(node: Dict[str, Any]) -> bool:
+    req = ["title","datePosted","hiringOrganization"]
+    if not all(node.get(k) for k in req):
+        return False
+    # location is required via jobLocation or via valid remote schema
+    has_loc = bool(node.get("jobLocation")) or (node.get("jobLocationType") in ["TELECOMMUTE","REMOTE"])
+    return has_loc
+
+
 def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_types: Optional[List[str]] = None, hints: Optional[Dict[str, Any]] = None) -> Dict:
     hints = hints or {}
     graph = _ensure_graph(data)
@@ -137,6 +155,24 @@ def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_
             cleaned.append(mo)
         _fill_from_hints(mo, hints)
 
+    # _JOBPOSTING_GUARD: drop JobPosting nodes that fail Google requireds, fallback to WebPage/CollectionPage
+    filtered: List[Dict] = []
+    for n in cleaned:
+        if n.get("@type") == "JobPosting" and not _has_required_jobposting_fields(n):
+            # Skip invalid JobPosting
+            continue
+        filtered.append(n)
+    cleaned = filtered
+
+    # Always ensure BreadcrumbList for interior pages when URL has a path
+    if _needs_breadcrumbs(url):
+        if not any(n.get("@type") == "BreadcrumbList" for n in cleaned):
+            from app.services.graph import _breadcrumb_from_url
+            try:
+                cleaned.append(_breadcrumb_from_url(url))
+            except Exception:
+                pass
+
     # Ensure MedicalWebPage basics
     if "MedicalWebPage" in set(secondary_types or []):
         mwp = next((n for n in cleaned if n.get("@type") == "MedicalWebPage"), None)
@@ -146,5 +182,29 @@ def sanitize_jsonld(data: Any, primary_type: str, url: Optional[str], secondary_
         if "url" not in mwp and url: mwp["url"] = url
         if "name" not in mwp and hints.get("name"): mwp["name"] = hints["name"]
         if "about" not in mwp and hints.get("name"): mwp["about"] = hints["name"]
+
+
+    # _JOBPOSTING_GUARD: drop JobPosting nodes that fail Google requireds; fallback ensured by WebPage/CollectionPage present elsewhere
+    filtered: List[Dict] = []
+    for _n in cleaned:
+        if _n.get("@type") == "JobPosting" and not _has_required_jobposting_fields(_n):
+            continue
+        filtered.append(_n)
+    cleaned = filtered
+
+    # Always ensure BreadcrumbList for interior pages
+    if _needs_breadcrumbs(url):
+        has_bc = any(isinstance(x, dict) and x.get("@type") == "BreadcrumbList" for x in cleaned)
+        if not has_bc:
+            # Minimal breadcrumb from URL path
+            parts = [p for p in (urlparse(url or "").path or "").split("/") if p]
+            items = []
+            base = f"{urlparse(url or '').scheme}://{urlparse(url or '').netloc}"
+            accum = ""
+            for i, p in enumerate(parts, start=1):
+                accum += "/" + p
+                items.append({"@type":"ListItem","position": i,"name": p.replace('-', ' ').title(),"item": base+accum})
+            if items:
+                cleaned.append({"@type": "BreadcrumbList", "itemListElement": items})
 
     return {"@context": "https://schema.org", "@graph": cleaned}

@@ -5,14 +5,19 @@
 <div class="container my-4">
   <h2>Batch</h2>
   <p class="text-muted small">
-    Required columns: <code>url</code>, <code>page_type</code>.<br>
-    Other columns are optional: <code>topic</code>, <code>subject</code>, <code>audience</code>, <code>address</code>, <code>phone</code>, <code>competitor1</code>, <code>competitor2</code>.<br>
+    Required column: <code>url</code>.<br>
+    Optional columns: <code>page_type</code>, <code>topic</code>, <code>subject</code>, <code>audience</code>, <code>address</code>, <code>phone</code>, <code>competitor1</code>, <code>competitor2</code>.<br>
     We accept common synonyms (e.g., <code>page_url</code> for <code>url</code>, <code>type</code> for <code>page_type</code>).
     <div class="mt-2">
       <strong>Example header:</strong><br>
       <code>url,page_type,topic,subject,audience,address,phone,competitor1,competitor2</code>
     </div>
     </p>
+    <div class="mt-2 small">
+      <strong>Sample row:</strong><br>
+      <code>https://example.org/specialties/cardiology,MedicalClinic,cardiology,Cardiology Care,,,&quot;111 Main St, Bronx, NY 10467&quot;,(718) 555-1212,https://competitor-a.com,https://competitor-b.com</code>
+    </div>
+    
   <div class="row g-3">
     <div class="col-md-6">
       <form method="post" action="/batch/upload_async" enctype="multipart/form-data">

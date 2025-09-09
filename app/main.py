@@ -460,7 +460,7 @@ async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Dep
     text = (await file.read()).decode("utf-8", errors="ignore")
     rows, warnings = parse_csv(text)
     if not rows:
-        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found", warnings=warnings)), status_code=303)
+        return RedirectResponse(str(URL("/batch").include_query_params(error="No data rows found or missing required 'url' column", warnings=warnings)), status_code=303)
     processed = []
     for row in rows:
         try:
@@ -481,7 +481,7 @@ async def batch_upload_async(request: Request, file: UploadFile = File(...), ses
     text = (await file.read()).decode("utf-8", errors="ignore")
     rows, warnings = parse_csv(text)
     if not rows:
-        return templates.TemplateResponse("batch.html", {"request": request, "error": "No data rows found", "warnings": warnings or []})
+        return templates.TemplateResponse("batch.html", {"request": request, "error": "No data rows found or missing required 'url' column", "warnings": warnings or []})
     jobs = []
     for row in rows:
         job_id = str(uuid.uuid4())
@@ -508,7 +508,7 @@ async def batch_fetch_async(request: Request, csv_url: str = Form(...), session:
         return templates.TemplateResponse("batch.html", {"request": request, "error": str(e), "warnings": []})
     rows, warnings = parse_csv(content)
     if not rows:
-        return templates.TemplateResponse("batch.html", {"request": request, "error": "No data rows found", "warnings": warnings or []})
+        return templates.TemplateResponse("batch.html", {"request": request, "error": "No data rows found or missing required 'url' column", "warnings": warnings or []})
     jobs = []
     for row in rows:
         job_id = str(uuid.uuid4())

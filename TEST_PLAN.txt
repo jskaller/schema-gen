@@ -1,0 +1,12 @@
+TEST PLAN — page_types async + flexible signatures
+
+1) Boot:
+   - make dev -> no TypeError on /admin/types
+
+2) Admin endpoints (manual or unit tests):
+   - await get_map(session) -> dict with lowercase keys
+   - await upsert_type(session, 'MEAC HomePage', 'MedicalOrganization')
+   - await delete_type(session, 'MEAC HomePage') -> True
+
+3) CSV/batch path:
+   - Mixed-case 'page_type' resolves correctly via resolve_schema_type()
