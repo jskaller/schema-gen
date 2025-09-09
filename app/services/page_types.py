@@ -1,80 +1,55 @@
 # app/services/page_types.py
-"""
-Page-type mapping utilities (case-insensitive) with legacy/awaitable admin API.
-
-Functions expected by app.main (awaited and sometimes passed a DB session):
-    - get_map(session?) -> dict
-    - upsert_type(session?, label, schema_type) -> None
-    - delete_type(session?, label) -> bool
-
-Also provides:
-    - resolve_schema_type(page_type_raw) -> Optional[str]
-
-Implementation notes
-- Keys are stored lowercased for case-insensitive lookups and updates.
-- Values should be valid Schema.org types (e.g., 'MedicalService', 'CollectionPage').
-- Functions are defined as async and accept optional leading `session` to match older call sites.
-"""
-
 from __future__ import annotations
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
-# Default bootstrap map — keys must be lowercase
-_PAGE_TYPE_MAP: Dict[str, str] = {
-    # Adjust via admin UI as needed
-    "meac homepage": "MedicalOrganization",
-    "meac medical specialty page": "MedicalService",
-    "meac careers page": "CollectionPage",
-}
+from app.services.settings import get_settings, update_settings
 
-def _norm(key: str) -> str:
-    return (key or "").strip().lower()
+def _norm_label(s: str | None) -> str:
+    return (s or "").strip()
 
-def resolve_schema_type(page_type_raw: str) -> Optional[str]:
-    """Case-insensitive lookup for a CSV/admin-provided page_type label."""
-    if not page_type_raw:
+def ci_lookup(mapping: Dict[str, dict], label: str | None) -> Optional[dict]:
+    if not mapping or not label:
         return None
-    return _PAGE_TYPE_MAP.get(_norm(page_type_raw))
+    target = _norm_label(label).lower()
+    for k, v in mapping.items():
+        if _norm_label(k).lower() == target:
+            return v
+    return None
 
-# --- Awaitable, arg-flexible admin API ---
+async def get_map(session) -> Dict[str, dict]:
+    s = await get_settings(session)
+    return dict(s.page_type_map or {})
 
-async def get_map(*args, **kwargs) -> Dict[str, str]:
-    """Return a copy of the page-type map. Accepts optional (ignored) session."""
-    return dict(_PAGE_TYPE_MAP)
+async def _save_map(session, new_map: Dict[str, dict]) -> None:
+    # Match update_settings positional signature used in app.main admin_post:
+    # update_settings(session, provider, page_type, req, rec, provider_model, ptm)
+    s = await get_settings(session)
+    provider = getattr(s, "provider", None) or "dummy"
+    page_type = getattr(s, "page_type", None) or "Hospital"
+    req = getattr(s, "required_fields", None)
+    rec = getattr(s, "recommended_fields", None)
+    provider_model = getattr(s, "provider_model", None)
+    ptm = new_map
+    await update_settings(session, provider, page_type, req, rec, provider_model, ptm)
 
-async def upsert_type(*args, **kwargs) -> None:
-    """Insert/update mapping. Supports signatures:
-        upsert_type(label, schema_type)
-        upsert_type(session, label, schema_type)
-    """
-    label = schema_type = None
-    if len(args) == 2:
-        label, schema_type = args
-    elif len(args) >= 3:
-        # First arg is likely a DB session; ignore it for in-memory map
-        _, label, schema_type = args[:3]
-    else:
-        # Named args support
-        label = kwargs.get("label")
-        schema_type = kwargs.get("schema_type")
-    if not label or not schema_type:
-        return
-    _PAGE_TYPE_MAP[_norm(label)] = str(schema_type).strip()
+async def upsert_type(session, label: str, primary: str, secondary: List[str] | None) -> None:
+    m = await get_map(session)
+    m[_norm_label(label)] = {
+        "primary": _norm_label(primary),
+        "secondary": [_norm_label(x) for x in (secondary or []) if _norm_label(x)],
+    }
+    await _save_map(session, m)
 
-async def delete_type(*args, **kwargs) -> bool:
-    """Delete a mapping. Supports signatures:
-        delete_type(label)
-        delete_type(session, label)
-    Returns True if removed.
-    """
-    label = None
-    if len(args) == 1:
-        (label,) = args
-    elif len(args) >= 2:
-        # First arg is likely a DB session; ignore it
-        _, label = args[:2]
-    else:
-        label = kwargs.get("label")
-    if not label:
+async def delete_type(session, label: str) -> bool:
+    m = await get_map(session)
+    key = None
+    target = _norm_label(label).lower()
+    for k in m.keys():
+        if _norm_label(k).lower() == target:
+            key = k
+            break
+    if key is None:
         return False
-    return _PAGE_TYPE_MAP.pop(_norm(label), None) is not None
+    m.pop(key, None)
+    await _save_map(session, m)
+    return True

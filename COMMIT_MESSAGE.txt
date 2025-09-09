@@ -1,1 +1,0 @@
-page_types: make admin API awaitable and accept optional session arg; keep case-insensitive lookups

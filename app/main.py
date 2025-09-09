@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Request, Form, UploadFile, File, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -35,6 +34,20 @@ templates = Jinja2Templates(directory="app/web/templates")
 HEARTBEAT_INTERVAL = 0.5
 GEN_TIMEOUT = 60
 
+# ---- Final sanitation helper (last-mile guard) ----
+def _finalize_jsonld(obj: dict, primary_type: str | None = None, url: str = "", secondary: list | None = None, hints: dict | None = None) -> dict:
+    try:
+        # Prefer the project's sanitize_jsonld signature if available
+        return sanitize_jsonld(obj, primary_type, url, secondary or [], hints or {})
+    except TypeError:
+        # Fall back to 1-arg sanitize if older signature is present
+        try:
+            return sanitize_jsonld(obj)
+        except Exception:
+            return obj
+    except Exception:
+        return obj
+
 @app.get("/favicon.ico")
 async def favicon():
     return Response(status_code=204)
@@ -56,11 +69,21 @@ def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
 
 async def resolve_types(session: AsyncSession, label: str | None):
     s = await get_settings(session)
-    mapping = s.page_type_map or {}
+    raw_map = s.page_type_map or {}
+    # Case-insensitive keys for lookup
+    norm_map = {}
+    for k, v in raw_map.items():
+        key = (k or "").strip().lower()
+        if not key:
+            continue
+        norm_map[key] = v or {}
     effective_label = (label or getattr(s, "page_type", None) or "Hospital")
-    cfg = mapping.get(effective_label, {"primary": effective_label, "secondary": []})
+    cfg = norm_map.get((effective_label or "").strip().lower(), {"primary": effective_label, "secondary": []})
     primary = cfg.get("primary") or effective_label
     secondary = cfg.get("secondary") or []
+    # Allow comma-separated string in settings for convenience
+    if isinstance(secondary, str):
+        secondary = [x.strip() for x in secondary.split(",") if x.strip()]
     return effective_label, primary, secondary, s
 
 def _desc_from_text(txt: str, fallback: str = "") -> str:
@@ -71,13 +94,15 @@ def _desc_from_text(txt: str, fallback: str = "") -> str:
     if len(t) <= 280:
         return t
     p = t.find(". ", 180, 280)
-    if p != -1: return t[:p+1]
+    if p != -1:
+        return t[:p+1]
     return t[:280]
 
 async def _quick_competitor_score(url: str, primary_type: str, session: AsyncSession, provider_name: str, provider_model: str | None):
     """Lightweight competitor pipeline: fetch → extract → ai → normalize → assemble → sanitize → validate → score"""
     try:
-        raw_html = await fetch_url(url); cleaned_text = extract_clean_text(raw_html) or ""
+        raw_html = await fetch_url(url)
+        cleaned_text = extract_clean_text(raw_html) or ""
     except Exception:
         cleaned_text = ""
     payload = GenerationInputs(url=url, cleaned_text=cleaned_text, topic="", subject="", audience="", address=None, phone=None, sameAs=None, page_type=primary_type)
@@ -96,7 +121,7 @@ async def _quick_competitor_score(url: str, primary_type: str, session: AsyncSes
         final_jsonld = primary_node
     # sanitize with minimal hints
     try:
-        final_jsonld = sanitize_jsonld(final_jsonld, primary_type, url or "", [], {"url": url})
+        final_jsonld = _finalize_jsonld(final_jsonld, primary_type, url or "", [], {"url": url})
     except Exception:
         pass
     root_node = final_jsonld["@graph"][0] if isinstance(final_jsonld, dict) and "@graph" in final_jsonld and final_jsonld["@graph"] else (final_jsonld if isinstance(final_jsonld, dict) else {})
@@ -206,7 +231,7 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
 
     await hb(88, "Sanitizing")
     try:
-        final_jsonld = sanitize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [], hints)
+        final_jsonld = _finalize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [], hints)
     except Exception as e:
         print(f"[sanitize] {e}", file=sys.stderr)
 
@@ -214,7 +239,8 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
     if isinstance(final_jsonld, dict) and "@graph" in final_jsonld and isinstance(final_jsonld["@graph"], list) and final_jsonld["@graph"]:
         for n in final_jsonld["@graph"]:
             if isinstance(n, dict) and n.get("@type") == primary_type:
-                root_node = n; break
+                root_node = n
+                break
         root_node = root_node or final_jsonld["@graph"][0]
     elif isinstance(final_jsonld, dict):
         root_node = final_jsonld
@@ -280,7 +306,7 @@ async def _process_single(url: str, topic, subject, audience, address, phone, co
         "phone": (root_node or {}).get("telephone") or hints.get("telephone") or "",
         "excerpt": (cleaned_text or "")[:2000],
         "length": len(cleaned_text or ""),
-        "jsonld": final_jsonld,
+        "jsonld": _finalize_jsonld(final_jsonld, primary_type, url or "", secondary_types or [], hints),
         "valid": bool(valid),
         "validation_errors": errors or [],
         "overall": overall,
@@ -341,7 +367,8 @@ async def events(job_id: str):
         last = -1
         while True:
             job = await get_job(job_id)
-            if not job: break
+            if not job:
+                break
             progress = job.get("progress", 0)
             msg = job.get("messages", [{"msg": "Working..."}])[-1]["msg"]
             if progress != last:
@@ -393,7 +420,8 @@ async def admin_post(request: Request,
     session: AsyncSession = Depends(get_session)):
     try:
         if use_defaults:
-            defs = defaults_for(page_type); req, rec = defs["required"], defs["recommended"]
+            defs = defaults_for(page_type)
+            req, rec = defs["required"], defs["recommended"]
         else:
             req = json.loads(required_fields) if (required_fields or "").strip() else None
             rec = json.loads(recommended_fields) if (recommended_fields or "").strip() else None
@@ -437,6 +465,8 @@ async def history_detail(request: Request, run_id: int, session: AsyncSession = 
 async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
     try:
         data = json.loads(jsonld)
+        # Last-mile sanitize before export
+        data = _finalize_jsonld(data)
         payload = json.dumps(data, indent=2)
     except Exception:
         payload = jsonld
@@ -446,8 +476,17 @@ async def export_jsonld(jsonld: str = Form(...), url: str = Form(...)):
 @app.post("/export/csv")
 async def export_csv(jsonld: str = Form(...), url: str = Form(...), score: str = Form("")):
     out = io.StringIO()
-    writer = csv.writer(out); writer.writerow(["url", "score", "jsonld"]); writer.writerow([url, score, jsonld])
-    out.seek(0); filename = _safe_filename_from_url(url, "schema-single", "csv")
+    writer = csv.writer(out)
+    try:
+        data = json.loads(jsonld)
+        data = _finalize_jsonld(data)
+        jsonld = json.dumps(data, ensure_ascii=False)
+    except Exception:
+        pass
+    writer.writerow(["url", "score", "jsonld"])
+    writer.writerow([url, score, jsonld])
+    out.seek(0)
+    filename = _safe_filename_from_url(url, "schema-single", "csv")
     return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 # ---------- Batch (page + legacy sync) ----------
@@ -464,18 +503,33 @@ async def batch_upload(file: UploadFile = File(...), session: AsyncSession = Dep
     processed = []
     for row in rows:
         try:
-            r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session)
-            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(r["jsonld"])})
+            r = await _process_single(
+                row.get("url", ""),
+                row.get("topic"),
+                row.get("subject"),
+                row.get("audience"),
+                row.get("address"),
+                row.get("phone"),
+                row.get("compare_existing"),
+                row.get("competitor1"),
+                row.get("competitor2"),
+                row.get("page_type") or None,
+                session,
+            )
+            sanitized = _finalize_jsonld(r.get("jsonld", {}), r.get("primary_type"), r.get("url", ""), r.get("secondary_types") or [], {})
+            processed.append({"url": r["url"], "score": r["overall"], "valid": "yes" if r["valid"] else "no", "jsonld": json.dumps(sanitized, ensure_ascii=False)})
         except Exception as e:
-            processed.append({"url": row.get("url",""), "score": "", "valid": "error", "jsonld": str(e)})
-    out = io.StringIO(); writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"]); writer.writeheader()
-    for row in processed: writer.writerow(row)
+            processed.append({"url": row.get("url", ""), "score": "", "valid": "error", "jsonld": str(e)})
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=["url", "score", "valid", "jsonld"])
+    writer.writeheader()
+    for row in processed:
+        writer.writerow(row)
     out.seek(0)
     ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts} )
+    return StreamingResponse(out, media_type="text/csv", headers={"Content-Disposition": f'attachment; filename="schema-batch-%s.csv"' % ts})
 
 # ---------- Batch (NEW async preview + competitors) ----------
-
 @app.post("/batch/upload_async", response_class=HTMLResponse)
 async def batch_upload_async(request: Request, file: UploadFile = File(...), session: AsyncSession = Depends(get_session)):
     text = (await file.read()).decode("utf-8", errors="ignore")
@@ -489,21 +543,38 @@ async def batch_upload_async(request: Request, file: UploadFile = File(...), ses
         async def runner(row=row, job_id=job_id):
             try:
                 await update_job(job_id, 3, "Queued")
-                r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session, job_id=job_id)
+                r = await _process_single(
+                    row.get("url", ""),
+                    row.get("topic"),
+                    row.get("subject"),
+                    row.get("audience"),
+                    row.get("address"),
+                    row.get("phone"),
+                    row.get("compare_existing"),
+                    row.get("competitor1"),
+                    row.get("competitor2"),
+                    row.get("page_type") or None,
+                    session,
+                    job_id=job_id,
+                )
+                # store sanitized result
+                r["jsonld"] = _finalize_jsonld(r.get("jsonld", {}), r.get("primary_type"), r.get("url", ""), r.get("secondary_types") or [], {})
                 await finish_job(job_id, r)
             except Exception as e:
                 tb = traceback.format_exc()
                 await update_job(job_id, 100, f"Error: {e}")
-                await finish_job(job_id, {"url": row.get("url",""), "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
+                await finish_job(job_id, {"url": row.get("url", ""), "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
         asyncio.create_task(runner())
-        jobs.append({"job_id": job_id, "url": row.get("url","")})
+        jobs.append({"job_id": job_id, "url": row.get("url", "")})
     return templates.TemplateResponse("batch_run.html", {"request": request, "jobs": jobs})
 
 @app.post("/batch/fetch_async", response_class=HTMLResponse)
 async def batch_fetch_async(request: Request, csv_url: str = Form(...), session: AsyncSession = Depends(get_session)):
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
-            r = await client.get(csv_url); r.raise_for_status(); content = r.text
+            r = await client.get(csv_url)
+            r.raise_for_status()
+            content = r.text
     except Exception as e:
         return templates.TemplateResponse("batch.html", {"request": request, "error": str(e), "warnings": []})
     rows, warnings = parse_csv(content)
@@ -516,41 +587,50 @@ async def batch_fetch_async(request: Request, csv_url: str = Form(...), session:
         async def runner(row=row, job_id=job_id):
             try:
                 await update_job(job_id, 3, "Queued")
-                r = await _process_single(row.get("url",""), row.get("topic"), row.get("subject"), row.get("audience"), row.get("address"), row.get("phone"), row.get("compare_existing"), row.get("competitor1"), row.get("competitor2"), row.get("page_type") or None, session, job_id=job_id)
+                r = await _process_single(
+                    row.get("url", ""),
+                    row.get("topic"),
+                    row.get("subject"),
+                    row.get("audience"),
+                    row.get("address"),
+                    row.get("phone"),
+                    row.get("compare_existing"),
+                    row.get("competitor1"),
+                    row.get("competitor2"),
+                    row.get("page_type") or None,
+                    session,
+                    job_id=job_id,
+                )
+                r["jsonld"] = _finalize_jsonld(r.get("jsonld", {}), r.get("primary_type"), r.get("url", ""), r.get("secondary_types") or [], {})
                 await finish_job(job_id, r)
             except Exception as e:
                 tb = traceback.format_exc()
                 await update_job(job_id, 100, f"Error: {e}")
-                await finish_job(job_id, {"url": row.get("url",""), "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
+                await finish_job(job_id, {"url": row.get("url", ""), "overall": 0, "valid": False, "validation_errors": [str(e)], "details": {"notes": [tb]}, "jsonld": {"@context": "https://schema.org", "@type": "Thing"}})
         asyncio.create_task(runner())
-        jobs.append({"job_id": job_id, "url": row.get("url","")})
+        jobs.append({"job_id": job_id, "url": row.get("url", "")})
     return templates.TemplateResponse("batch_run.html", {"request": request, "jobs": jobs})
 
 @app.post("/batch/export_jobs")
 async def batch_export_jobs(job_ids: str = Form(...)):
-    """
-    Accepts a comma-separated list of job_ids and returns a single CSV download
-    with one row per job result (url, overall score, valid flag, and JSON-LD).
-    """
+    """Accepts a comma-separated list of job_ids and returns a single CSV download
+    with one row per job result (url, overall score, valid flag, and JSON-LD)."""
     ids = [j.strip() for j in (job_ids or "").split(",") if j.strip()]
-    # Build CSV in-memory
-    import io, csv
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["url","overall","valid","jsonld"])
+    w.writerow(["url", "overall", "valid", "jsonld"])
     for jid in ids:
         job = await get_job(jid)
-        # job structure from finish_job: {"url": ..., "overall": ..., "valid": ..., "jsonld": ...}
         if not job or "result" not in job:
-            # Try flat format fallback
             res = job or {}
         else:
             res = job["result"]
-        url = res.get("url","")
+        url = res.get("url", "")
         overall = res.get("overall", 0)
         valid = "yes" if res.get("valid") else "no"
         jsonld_obj = res.get("jsonld", {})
         try:
+            jsonld_obj = _finalize_jsonld(jsonld_obj)
             json_str = json.dumps(jsonld_obj, ensure_ascii=False)
         except Exception:
             json_str = "{}"

@@ -1,12 +1,6 @@
-TEST PLAN — page_types async + flexible signatures
+TEST PLAN — DB-backed page-types
 
-1) Boot:
-   - make dev -> no TypeError on /admin/types
-
-2) Admin endpoints (manual or unit tests):
-   - await get_map(session) -> dict with lowercase keys
-   - await upsert_type(session, 'MEAC HomePage', 'MedicalOrganization')
-   - await delete_type(session, 'MEAC HomePage') -> True
-
-3) CSV/batch path:
-   - Mixed-case 'page_type' resolves correctly via resolve_schema_type()
+1) Open /admin/types: existing mappings should display (if previously saved).
+2) Add a new mapping; refresh page — it should persist and render (not empty).
+3) Run a batch with mixed-case page_type labels; secondaries from the mapping should appear in JSON-LD.
+4) Delete a mapping; confirm it disappears after refresh and batches reflect the change.
