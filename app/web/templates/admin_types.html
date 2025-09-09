@@ -1,4 +1,3 @@
-
 {% extends "base.html" %}
 {% block title %}Schema Gen – Page Types{% endblock %}
 {% block content %}
@@ -14,12 +13,15 @@
           {% for label, cfg in mapping.items() %}
             <tr>
               <td><strong>{{ label }}</strong></td>
-              <td>{{ cfg.primary }}</td>
-              <td>{{ ', '.join(cfg.secondary) }}</td>
+              <td>{{ cfg.primary or cfg['primary'] }}</td>
+              <td>
+                {% set secs = cfg.secondary or cfg['secondary'] %}
+                {% for t in secs %}<span class="badge text-bg-light me-1">{{ t }}</span>{% endfor %}
+              </td>
               <td class="text-end">
-                <form method="post" action="/admin/types/delete" class="d-inline">
+                <form method="post" action="/admin/types/delete" onsubmit="return confirm('Delete {{ label }}?')">
                   <input type="hidden" name="label" value="{{ label }}">
-                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                  <button class="btn btn-sm btn-outline-danger">Delete</button>
                 </form>
               </td>
             </tr>
@@ -34,10 +36,21 @@
       <div class="card-body">
         <h6>Add / Update</h6>
         <form method="post" action="/admin/types/upsert">
-          <div class="mb-2"><label class="form-label">Label</label><input class="form-control" name="label" required></div>
-          <div class="mb-2"><label class="form-label">Primary</label><input class="form-control" name="primary" placeholder="e.g., MedicalOrganization" required></div>
-          <div class="mb-2"><label class="form-label">Secondary (comma-separated)</label><input class="form-control" name="secondary" placeholder="MedicalWebPage, Hospital, BreadcrumbList"></div>
-          <div class="text-end"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
+          <div class="mb-2">
+            <label class="form-label">Label</label>
+            <input class="form-control" name="label" placeholder="e.g., MEAC HomePage" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Primary</label>
+            <input class="form-control" name="primary" placeholder="e.g., MedicalOrganization" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Secondary (comma separated)</label>
+            <input class="form-control" name="secondary" placeholder="e.g., WebSite, WebPage, MedicalOrganization, BreadcrumbList">
+          </div>
+          <div class="text-end">
+            <button class="btn btn-primary">Save</button>
+          </div>
         </form>
       </div>
     </div>

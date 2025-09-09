@@ -1,45 +1,33 @@
-
 from __future__ import annotations
+from typing import Optional, Dict, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text
+from sqlalchemy import select
 from app.settings_models import Settings
 
-DEFAULT_REQUIRED = ["@context","@type","name","url"]
-DEFAULT_RECOMMENDED = ["description","telephone","address","audience","dateModified","sameAs","medicalSpecialty"]
-
-async def _ensure_columns(session: AsyncSession):
-    try:
-        res = await session.execute(text("PRAGMA table_info(settings)"))
-        cols = [row[1] for row in res.fetchall()]
-        alters = []
-        if "provider_model" not in cols:
-            alters.append("ALTER TABLE settings ADD COLUMN provider_model VARCHAR")
-        if "page_type_map" not in cols:
-            alters.append("ALTER TABLE settings ADD COLUMN page_type_map TEXT")
-        for stmt in alters:
-            await session.execute(text(stmt))
-        if alters:
-            await session.commit()
-    except Exception:
-        pass
-
 async def get_settings(session: AsyncSession) -> Settings:
-    await _ensure_columns(session)
     res = await session.execute(select(Settings).limit(1))
     s = res.scalars().first()
-    if not s:
+    if s is None:
         s = Settings()
         session.add(s)
         await session.commit()
         await session.refresh(s)
     return s
 
-async def update_settings(session: AsyncSession, provider: str, page_type: str, required: list | None, recommended: list | None, provider_model: str | None = None, page_type_map: dict | None = None) -> Settings:
+async def update_settings(
+    session: AsyncSession,
+    provider: Optional[str] = None,
+    provider_model: Optional[str] = None,
+    page_type: Optional[str] = None,
+    page_type_map: Optional[Dict[str, dict]] = None,
+    required: Optional[List[str]] = None,
+    recommended: Optional[List[str]] = None,
+) -> Settings:
     s = await get_settings(session)
     if provider is not None:
         s.provider = provider
     if provider_model is not None:
-        s.provider_model = provider_model or None
+        s.provider_model = provider_model
     if page_type is not None:
         s.page_type = page_type
     if page_type_map is not None:

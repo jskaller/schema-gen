@@ -1,55 +1,74 @@
 # app/services/sanitize.py
-"""
-Sanitization utilities: enforce single @context/@graph and normalize node @type
-to valid Schema.org classes using the page-type registry (future-proof).
-
-BACKWARD COMPAT:
-- Provide sanitize_jsonld(...) alias expected by app.main
-- Provide sanitize(...) alias as well if other modules used it
-"""
 from __future__ import annotations
 from typing import Any, Dict, List, Union
 
-try:
-    from app.services.page_types import coerce_schema_type
-except Exception:
-    def coerce_schema_type(x: str) -> str:
-        return "WebPage"
+Json = Union[Dict[str, Any], List[Any], None]
 
-Json = Dict[str, Any]
+def _as_list(x):
+    if x is None:
+        return []
+    if isinstance(x, list):
+        return x
+    return [x]
 
-def _normalize_type(t: Union[str, List[str]]) -> Union[str, List[str]]:
-    if isinstance(t, str):
-        return coerce_schema_type(t)
-    if isinstance(t, list):
-        return [coerce_schema_type(x) for x in t]
-    return t
+def _has_required_jobposting_fields(node: Dict[str, Any]) -> List[str]:
+    required = ["title", "datePosted", "description", "hiringOrganization"]
+    missing = [k for k in required if k not in node or (isinstance(node.get(k), str) and not node.get(k).strip())]
+    return missing
 
-def sanitize_graph(graph_obj: Json) -> Json:
-    """Normalize @type values for every node in @graph; ensure single top-level @context."""
-    if not isinstance(graph_obj, dict):
-        return graph_obj
+def _flatten_to_graph(obj: Json) -> Dict[str, Any]:
+    if obj is None:
+        return {"@context": "https://schema.org", "@graph": []}
+    if isinstance(obj, dict):
+        ctx = obj.get("@context", "https://schema.org")
+        g = obj.get("@graph")
+        if isinstance(g, list):
+            nodes = g
+        else:
+            # If a single node dict, treat as 1-node graph
+            nodes = [obj] if "@type" in obj else []
+        return {"@context": ctx, "@graph": nodes}
+    if isinstance(obj, list):
+        # List of nodes -> graph
+        return {"@context": "https://schema.org", "@graph": [n for n in obj if isinstance(n, dict)]}
+    return {"@context": "https://schema.org", "@graph": []}
 
-    if "@context" not in graph_obj:
-        graph_obj["@context"] = "https://schema.org"
+def sanitize_graph(graph_obj: Json, *args, **kwargs) -> Dict[str, Any]:
+    g = _flatten_to_graph(graph_obj)
+    ctx = g.get("@context") or "https://schema.org"
+    nodes = [n for n in _as_list(g.get("@graph")) if isinstance(n, dict)]
 
-    g = graph_obj.get("@graph")
-    if isinstance(g, list):
-        for node in g:
-            if isinstance(node, dict):
-                if "@type" in node:
-                    node["@type"] = _normalize_type(node.get("@type"))
-                if "@context" in node:
-                    node.pop("@context", None)
+    # Drop nested @context on nodes; normalize @type to strings
+    clean: List[Dict[str, Any]] = []
+    for n in nodes:
+        n = dict(n)
+        n.pop("@context", None)
+        t = n.get("@type")
+        if isinstance(t, list):
+            n["@type"] = [str(x) for x in t if x]
+        elif isinstance(t, str):
+            n["@type"] = t.strip()
+        else:
+            n.pop("@type", None)
+        clean.append(n)
 
-    return graph_obj
+    # Remove JobPosting nodes missing requireds
+    kept: List[Dict[str, Any]] = []
+    for n in clean:
+        t = n.get("@type")
+        types = [t] if isinstance(t, str) else (t or [])
+        if "JobPosting" in types:
+            missing = _has_required_jobposting_fields(n)
+            if missing:
+                # skip it
+                continue
+        kept.append(n)
 
-# ---- Backward-compatible aliases ----
+    return {"@context": ctx, "@graph": kept}
 
-def sanitize_jsonld(graph_obj: Json) -> Json:
-    """Legacy entrypoint used by app.main; delegates to sanitize_graph."""
-    return sanitize_graph(graph_obj)
+# Backward compatible aliases
+def sanitize_jsonld(graph_obj: Json, *args, **kwargs) -> Dict[str, Any]:
+    return sanitize_graph(graph_obj, *args, **kwargs)
 
-def sanitize(graph_obj: Json) -> Json:
-    """Legacy alias for any modules calling sanitize(...)."""
-    return sanitize_graph(graph_obj)
+def sanitize(graph_obj: Json, *args, **kwargs) -> Dict[str, Any]:
+    return sanitize_graph(graph_obj, *args, **kwargs)
