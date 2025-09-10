@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Schema Gen – Settings{% endblock %}
+{% block content %}
+<h5>Extraction (Phase 1)</h5>
+<form method="post" action="/admin/settings/extract">
+  <div class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" id="shadow" name="shadow" {% if cfg.shadow or cfg['shadow'] %}checked{% endif %}>
+    <label class="form-check-label" for="shadow">Shadow mode (compute diffs only)</label>
+  </div>
+  <div class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" id="inLanguage" name="inLanguage" {% if cfg.inLanguage or cfg['inLanguage'] %}checked{% endif %}>
+    <label class="form-check-label" for="inLanguage">Set WebPage.inLanguage</label>
+  </div>
+  <div class="form-check form-switch mb-2">
+    <input class="form-check-input" type="checkbox" id="canonical" name="canonical" {% if cfg.canonical or cfg['canonical'] %}checked{% endif %}>
+    <label class="form-check-label" for="canonical">Canonical URL override</label>
+  </div>
+  <div class="form-check form-switch mb-3">
+    <input class="form-check-input" type="checkbox" id="dateModified" name="dateModified" {% if cfg.dateModified or cfg['dateModified'] %}checked{% endif %}>
+    <label class="form-check-label" for="dateModified">Set dateModified from Last-Modified header</label>
+  </div>
+  <div class="text-end">
+    <button class="btn btn-primary">Save</button>
+  </div>
+</form>
+{% endblock %}

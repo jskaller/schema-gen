@@ -1,6 +1,0 @@
-TEST PLAN — DB-backed page-types
-
-1) Open /admin/types: existing mappings should display (if previously saved).
-2) Add a new mapping; refresh page — it should persist and render (not empty).
-3) Run a batch with mixed-case page_type labels; secondaries from the mapping should appear in JSON-LD.
-4) Delete a mapping; confirm it disappears after refresh and batches reflect the change.
