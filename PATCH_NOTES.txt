@@ -1,0 +1,1 @@
+Move _process_single import to lazy getter to prevent router import errors so /batch mounts correctly.

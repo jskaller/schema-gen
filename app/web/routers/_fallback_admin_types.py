@@ -1,43 +1,36 @@
-
 from __future__ import annotations
-from fastapi import APIRouter, Request, Depends
-from starlette.responses import HTMLResponse, RedirectResponse, JSONResponse
+from typing import Dict, Any, List
+from fastapi import APIRouter, Request, Depends, Form
 from fastapi.templating import Jinja2Templates
+from starlette.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-import json
 from app.db import get_session
-from app.services.settings import get_settings, update_settings
+from app.services.settings import get_settings
+from app.services.page_types import get_map, upsert_type, delete_type
 
 templates = Jinja2Templates(directory="app/web/templates")
 router = APIRouter()
 
 @router.get("/types", response_class=HTMLResponse)
-async def types_page(request: Request, session: AsyncSession = Depends(get_session)):
-    s = await get_settings(session)
-    mapping = s.page_type_map or {}
-    return templates.TemplateResponse("admin_types.html", {
-        "request": request,
-        "mapping": mapping,
-        "page_type_map": json.dumps(mapping, indent=2)
-    })
+async def admin_types_page(request: Request, session: AsyncSession = Depends(get_session)):
+    settings = await get_settings(session)
+    mapping = await get_map(session)
+    # mapping is a Dict[str, Dict[str, Any]]
+    return templates.TemplateResponse("admin_types.html", {"request": request, "settings": settings, "mapping": mapping})
 
-@router.post("/types/save")
-async def types_save(request: Request, session: AsyncSession = Depends(get_session)):
-    form = await request.form()
-    raw = form.get("page_type_map") or form.get("mapping_json") or "{}"
-    try:
-        data = json.loads(raw)
-    except Exception as e:
-        return templates.TemplateResponse("admin_types.html", {
-            "request": request,
-            "mapping": {},
-            "error": f"Invalid JSON: {e}",
-            "page_type_map": raw,
-        }, status_code=400)
-    await update_settings(session, page_type_map=data)
+@router.post("/types/upsert", response_class=HTMLResponse)
+async def admin_types_upsert(request: Request,
+                             label: str = Form(...),
+                             primary: str = Form(...),
+                             secondary: str = Form(""),
+                             session: AsyncSession = Depends(get_session)):
+    secondaries = [s.strip() for s in (secondary or "").split(",") if s.strip()]
+    await upsert_type(session, label, primary, secondaries)
     return RedirectResponse(url="/admin/types", status_code=303)
 
-@router.get("/types.json")
-async def types_json(session: AsyncSession = Depends(get_session)):
-    s = await get_settings(session)
-    return JSONResponse(s.page_type_map or {})
+@router.post("/types/delete", response_class=HTMLResponse)
+async def admin_types_delete(request: Request,
+                             label: str = Form(...),
+                             session: AsyncSession = Depends(get_session)):
+    await delete_type(session, label)
+    return RedirectResponse(url="/admin/types", status_code=303)
