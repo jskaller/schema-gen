@@ -1,34 +1,191 @@
-
 {% extends "base.html" %}
 {% block title %}Schema Gen – Admin{% endblock %}
 {% block content %}
-<h5>Admin</h5>
-{% if ok %}<div class="alert alert-success">Saved.</div>{% endif %}
-{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
-<div class="mb-3"><a href="/admin/types" class="btn btn-sm btn-outline-primary">Manage Page Types</a></div>
-<form method="post" action="/admin">
-  <div class="row g-3">
-    <div class="col-md-4">
-      <label class="form-label">Provider</label>
-      <select class="form-select" name="provider">
-        <option value="dummy" {% if settings.provider == 'dummy' %}selected{% endif %}>Dummy</option>
-        <option value="ollama" {% if settings.provider == 'ollama' %}selected{% endif %}>Ollama</option>
-      </select>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Model (Ollama)</label>
-      <select class="form-select" name="provider_model">
-        <option value="">(default)</option>
-        {% for m in ollama_models %}<option value="{{ m }}" {% if settings.provider_model == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
-      </select>
-    </div>
-    <div class="col-md-4">
-      <label class="form-label">Default Page Type</label>
-      <select class="form-select" name="page_type">
-        {% for p in page_types %}<option value="{{ p }}" {% if settings.page_type == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
-      </select>
+<h4 class="mb-3">Admin <span class="badge bg-secondary ms-2">UI v3</span></h4>
+
+{% set pm = settings.provider_model if settings else None %}
+{% if pm is string %}
+  {% set model_val = pm %}
+{% elif pm and pm|length > 0 %}
+  {% set model_val = pm[0] %}
+{% else %}
+  {% set model_val = '' %}
+{% endif %}
+
+{% set settings = settings or {} %}
+{% set prov = settings.provider or 'ollama' %}
+{% set pc = settings.extract_config or {} %}
+{% set provcfg = pc.get('_provider', {}) if pc else {} %}
+{% set ollama_host = (provcfg.get('ollama') or {}).get('host', 'http://localhost:11434') %}
+{% set gemini_key = (provcfg.get('gemini') or {}).get('api_key', '') %}
+{% set openai_key = (provcfg.get('openai') or {}).get('api_key', '') %}
+{% set extract = settings.extract_config or {} %}
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="mb-3">AI Provider</h5>
+
+        <form id="provider-form" method="post" action="/admin/save" class="vstack gap-3">
+          <div class="row g-3 align-items-end">
+            <div class="col-sm-4">
+              <label class="form-label">Provider</label>
+              <select class="form-select" name="provider" id="provider">
+                <option value="ollama" {{ 'selected' if prov=='ollama' else '' }}>Ollama</option>
+                <option value="gemini" {{ 'selected' if prov=='gemini' else '' }}>Gemini</option>
+                <option value="openai" {{ 'selected' if prov=='openai' else '' }}>ChatGPT (OpenAI)</option>
+              </select>
+            </div>
+            <div class="col-sm-8">
+              <label class="form-label">Model</label>
+              <div class="input-group">
+                <select class="form-select" name="provider_model" id="provider_model_select">
+                  {% if model_val %}<option selected value="{{ model_val }}">{{ model_val }}</option>{% endif %}
+                </select>
+                <button class="btn btn-outline-secondary" type="button" id="btn-refresh-models">Refresh</button>
+              </div>
+              <div class="form-text">Pick from live list (Ollama) or presets (Gemini/OpenAI).</div>
+            </div>
+          </div>
+
+          <div class="row g-3" id="cfg-ollama" {% if prov!='ollama' %}style="display:none"{% endif %}>
+            <div class="col-12">
+              <label class="form-label">Ollama Host</label>
+              <input type="text" class="form-control" name="ollama.host" id="ollama_host" value="{{ ollama_host }}" placeholder="http://localhost:11434">
+            </div>
+          </div>
+
+          <div class="row g-3" id="cfg-gemini" {% if prov!='gemini' %}style="display:none"{% endif %}>
+            <div class="col-12">
+              <label class="form-label">Gemini API Key</label>
+              <input type="password" class="form-control" name="gemini.api_key" id="gemini_key" value="{{ gemini_key }}" placeholder="AIza...">
+            </div>
+          </div>
+
+          <div class="row g-3" id="cfg-openai" {% if prov!='openai' %}style="display:none"{% endif %}>
+            <div class="col-12">
+              <label class="form-label">OpenAI API Key</label>
+              <input type="password" class="form-control" name="openai.api_key" id="openai_key" value="{{ openai_key }}" placeholder="sk-...">
+            </div>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary" type="submit">Save</button>
+            <button class="btn btn-outline-secondary" type="button" id="btn-test">Test Settings</button>
+          </div>
+          <div id="test-results" class="mt-3"></div>
+        </form>
+
+      </div>
     </div>
   </div>
-  <div class="text-end mt-3"><button class="btn btn-primary" type="submit">Save</button></div>
-</form>
+
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="mb-3">Extraction (Phase 1)</h5>
+
+        {% set shadow = extract.get('shadow', True) %}
+        {% set inLanguage = extract.get('inLanguage', True) %}
+        {% set canonical = extract.get('canonical', True) %}
+        {% set dateModified = extract.get('dateModified', True) %}
+
+        <form method="post" action="/admin/extract" class="vstack gap-2">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="shadow" id="shadow" {% if shadow %}checked{% endif %}>
+            <label class="form-check-label" for="shadow">Shadow mode (compute diffs only)</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="inLanguage" id="inLanguage" {% if inLanguage %}checked{% endif %}>
+            <label class="form-check-label" for="inLanguage">Add inLanguage</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="canonical" id="canonical" {% if canonical %}checked{% endif %}>
+            <label class="form-check-label" for="canonical">Use canonical (same host only)</label>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="dateModified" id="dateModified" {% if dateModified %}checked{% endif %}>
+            <label class="form-check-label" for="dateModified">Add dateModified</label>
+          </div>
+          <button class="btn btn-primary mt-2" type="submit">Save Extraction</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const providerEl = document.getElementById('provider');
+  const modelSel = document.getElementById('provider_model_select');
+  const btnRefresh = document.getElementById('btn-refresh-models');
+  const testBtn = document.getElementById('btn-test');
+  const results = document.getElementById('test-results');
+
+  const cfg = {
+    ollama: document.getElementById('cfg-ollama'),
+    gemini: document.getElementById('cfg-gemini'),
+    openai: document.getElementById('cfg-openai')
+  };
+
+  function showCfg() {
+    const p = providerEl.value;
+    for (const k in cfg) {
+      cfg[k].style.display = (k === p) ? '' : 'none';
+    }
+  }
+  providerEl.addEventListener('change', () => { showCfg(); loadModels(); });
+  showCfg();
+
+  async function loadModels() {
+    const p = providerEl.value;
+    try {
+      const res = await fetch(`/admin/models?provider=${encodeURIComponent(p)}`);
+      const data = await res.json();
+      const list = Array.isArray(data.models) ? data.models : [];
+      const current = {{ model_val|tojson|safe }};
+
+      modelSel.innerHTML = "";
+      let hasCurrent = false;
+      for (const m of list) {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        if (current && m === current) { opt.selected = true; hasCurrent = true; }
+        modelSel.appendChild(opt);
+      }
+      if (current && !hasCurrent) {
+        const opt = document.createElement('option');
+        opt.value = current; opt.textContent = current;
+        opt.selected = true;
+        modelSel.insertBefore(opt, modelSel.firstChild);
+      }
+      if (!current && list.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = ""; opt.textContent = "(no models found)";
+        modelSel.appendChild(opt);
+      }
+    } catch (e) {
+      alert('Failed to load models: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  btnRefresh.addEventListener('click', loadModels);
+  document.addEventListener('DOMContentLoaded', loadModels);
+
+  testBtn.addEventListener('click', async () => {
+    const form = new FormData();
+    form.append('provider', providerEl.value);
+    const res = await fetch('/admin/test', { method: 'POST', body: form });
+    let data = {};
+    try { data = await res.json(); } catch(e) { data = { ok:false, error:'invalid json' }; }
+    results.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'alert ' + (data.ok ? 'alert-success' : 'alert-warning');
+    wrap.innerHTML = `<pre class="mb-0" style="white-space:pre-wrap">${JSON.stringify(data, null, 2)}</pre>`;
+    results.appendChild(wrap);
+  });
+})();
+</script>
+
 {% endblock %}
