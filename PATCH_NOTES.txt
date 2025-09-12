@@ -1,1 +1,1 @@
-Move _process_single import to lazy getter to prevent router import errors so /batch mounts correctly.
+Enhanced /batch runner fallback: if _process_single throws, build a full @graph using admin page_type_map (case-insensitive). Includes /api/job and export endpoints; fresh session in background tasks.

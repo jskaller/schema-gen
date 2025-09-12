@@ -52,8 +52,17 @@ def _safe_filename_from_url(url: str, prefix: str, ext: str) -> str:
 async def resolve_types(session: AsyncSession, label: str | None):
     s = await get_settings(session)
     mapping = s.page_type_map or {}
-    effective_label = (label or s.page_type or "Hospital")
-    cfg = mapping.get(effective_label, {"primary": effective_label, "secondary": []})
+    # Case-insensitive matching per requirements
+    effective_label = (label or s.page_type or "WebPage")
+    key = (effective_label or "").strip().lower()
+    map_ci = { (k or "").strip().lower(): v for k, v in (mapping or {}).items() }
+    cfg = map_ci.get(key)
+    if cfg is None:
+        # fall back to exact key if stored with different whitespace
+        cfg = mapping.get(effective_label)
+    if cfg is None:
+        cfg = {"primary": effective_label, "secondary": []}
     primary = cfg.get("primary") or effective_label
     secondary = cfg.get("secondary") or []
     return effective_label, primary, secondary, s
+
